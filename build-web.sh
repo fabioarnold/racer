@@ -1,0 +1,1 @@
+zig build -Dtarget=wasm32-emscripten -Doptimize=ReleaseSmall --sysroot /Users/fabio/Developer/racer/emsdk/upstream/emscripten 
