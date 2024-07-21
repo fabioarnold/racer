@@ -2,73 +2,67 @@ const std = @import("std");
 const rl = @import("raylib");
 const gl = rl.gl;
 const rlm = rl.math;
-const Menu = @import("Menu.zig");
-
 const Vec3 = rl.Vector3;
+const Car = @import("Car.zig");
+const Menu = @import("Menu.zig");
 
 const RL_LINES = 0x0001;
 const RL_TRIANGLES = 0x0004;
 const RL_QUADS = 0x0007;
 
-const max_forward_speed = 15;
+const max_forward_speed = mazda_rx7_top_speed_kmph * kmph_to_mps;
 const max_reverse_speed = 5;
 
 const kmph_to_mps = 1.0 / 3.6;
 const mazda_rx7_top_speed_kmph = 250;
 
-const Car = struct {
-    const dist_front = 1.49603;
-    const dist_back = 0.961294;
-    const wheel_radius = 0.352841;
+var car: Car = undefined;
+var model: rl.Model = undefined;
+var background_texture: rl.Texture2D = undefined;
 
-    front: Vec3,
-    back: Vec3,
-    speed: f32 = 0,
-    steering_angle: f32 = 0, // relative
-    wheel_angle: f32 = 0,
+var track_points: std.ArrayList(Vec3) = undefined;
 
-    fn init(pos: Vec3) Car {
-        return .{
-            .front = pos.add(Vec3.init(0, 0, dist_front)),
-            .back = pos.add(Vec3.init(0, 0, -dist_back)),
-        };
+fn drawScene(camera: rl.Camera) void {
+    rl.beginMode3D(camera);
+    defer rl.endMode3D();
+
+    const draw_floor = false;
+    if (draw_floor) {
+        gl.rlPushMatrix();
+        defer gl.rlPopMatrix();
+
+        gl.rlSetTexture(background_texture.id);
+        gl.rlBegin(RL_QUADS);
+        gl.rlColor4f(1, 1, 1, 0.2);
+        gl.rlTexCoord2f(0, 0);
+        gl.rlVertex3f(-100, 0, -100);
+        gl.rlTexCoord2f(0, 64);
+        gl.rlVertex3f(-100, 0, 100);
+        gl.rlTexCoord2f(64, 64);
+        gl.rlVertex3f(100, 0, 100);
+        gl.rlTexCoord2f(64, 0);
+        gl.rlVertex3f(100, 0, -100);
+        gl.rlEnd();
+        gl.rlSetTexture(0);
     }
 
-    fn integrate(self: *Car, dt: f32) void {
-        const up = Vec3.init(0, 1, 0);
-        var dir = self.direction();
-        const move_forward = dir.scale(self.speed).scale(dt);
-        const steer = move_forward.rotateByAxisAngle(up, self.steering_angle);
-        self.front = self.front.add(steer);
-        self.back = self.back.add(move_forward);
-        // normalize distance
-        dir = self.direction();
-        self.front = self.back.add(dir.scale(dist_front + dist_back));
+    // mirror
+    gl.rlSetCullFace(@intCast(@intFromEnum(gl.rlCullMode.rl_cull_face_front)));
+    rl.drawModelEx(model, car.center(), Vec3.init(0, 1, 0), car.angle(), Vec3.init(1, -1, 1), rl.Color.white);
+    gl.rlSetCullFace(@intCast(@intFromEnum(gl.rlCullMode.rl_cull_face_back)));
 
-        // calculate wheel angle
-        self.wheel_angle += self.speed / wheel_radius * dt;
-    }
-
-    fn center(self: Car) Vec3 {
-        return self.front.lerp(self.back, dist_front / (dist_front + dist_back));
-    }
-
-    fn direction(self: Car) Vec3 {
-        return self.front.subtract(self.back).normalize();
-    }
-
-    fn angle(self: Car) f32 {
-        const dir = self.direction();
-        return std.math.radiansToDegrees(std.math.atan2(dir.x, dir.z));
-    }
-};
+    rl.drawModelEx(model, car.center(), Vec3.init(0, 1, 0), car.angle(), Vec3.init(1, 1, 1), rl.Color.white);
+}
 
 pub fn main() !void {
-    const screen_width = 1200;
+    const allocator = std.heap.c_allocator;
+
+    const screen_width = 1280;
     const screen_height = 720;
 
     rl.setTraceLogLevel(.log_error);
 
+    rl.setConfigFlags(.{ .msaa_4x_hint = true, .vsync_hint = true });
     rl.initWindow(screen_width, screen_height, "Racer");
     defer rl.closeWindow();
 
@@ -84,8 +78,17 @@ pub fn main() !void {
         .fovy = 45,
         .projection = .camera_perspective,
     };
+    var camera_td = rl.Camera{
+        .position = rl.Vector3.init(0, 20, 0),
+        .target = Vec3.zero(),
+        .up = rl.Vector3.init(0, 1, 0),
+        .fovy = 45,
+        .projection = .camera_perspective,
+    };
+    var use_camera_td = true;
 
-    const model = rl.loadModel("data/mazda_rx7.glb");
+    track_points = std.ArrayList(Vec3).init(allocator);
+    model = rl.loadModel("data/mazda_rx7.glb");
     var model_animations = try rl.loadModelAnimations("data/mazda_rx7.glb");
     for (model_animations[0].bones[0..@intCast(model_animations[0].boneCount)], 0..) |b, i| {
         std.debug.print("b {} {s}\n", .{ i, b.name });
@@ -101,12 +104,12 @@ pub fn main() !void {
     Menu.load();
 
     const background_image = rl.genImageChecked(64, 64, 32, 32, rl.Color.black.alpha(0.5), rl.Color.gray);
-    const background_texture = rl.loadTextureFromImage(background_image);
+    background_texture = rl.loadTextureFromImage(background_image);
     rl.unloadImage(background_image);
 
 
     var steer: f32 = 0;
-    var car = Car.init(Vec3.zero());
+    car = Car.init(Vec3.zero());
 
     var menu_time: f32 = 1000; // @floatCast(rl.getTime());
 
@@ -114,6 +117,17 @@ pub fn main() !void {
         const time: f32 = @floatCast(rl.getTime());
         camera.position.x = 10 * @sin(0 * time);
         camera.position.z = 10 * @cos(0 * time);
+
+        if (rl.isMouseButtonPressed(.mouse_button_left)) {
+            const mouse_pos = rl.getMousePosition();
+            const ray = rl.getScreenToWorldRay(mouse_pos, camera_td);
+            const t = -ray.position.y / ray.direction.y;
+            const point = ray.position.add(ray.direction.scale(t));
+            try track_points.append(Vec3.init(point.x, point.z, 0));
+        }
+        if (rl.isKeyPressed(.key_tab)) {
+            use_camera_td = !use_camera_td;
+        }
 
         Menu.handleInput();
         if (rl.isKeyPressed(.key_enter)) {
@@ -133,8 +147,22 @@ pub fn main() !void {
         car.steering_angle = -max_steering_angle * steer;
         car.integrate(1.0 / 60.0);
 
+        // update car animation
+        const anim = &model_animations[1];
+        const wheel_rot = rlm.quaternionFromAxisAngle(Vec3.init(1, 0, 0), car.wheel_angle);
+        const wheel_turn = rlm.quaternionFromAxisAngle(Vec3.init(0, 1, 0), car.steering_angle);
+        anim.framePoses[0][1].rotation = wheel_turn;
+        anim.framePoses[0][2].rotation = rlm.quaternionMultiply(wheel_turn, wheel_rot);
+        anim.framePoses[0][3].rotation = wheel_turn;
+        anim.framePoses[0][4].rotation = rlm.quaternionMultiply(wheel_turn, wheel_rot);
+        anim.framePoses[0][5].rotation = wheel_rot;
+        anim.framePoses[0][6].rotation = wheel_rot;
+        rl.updateModelAnimation(model, model_animations[1], 0);
+
         camera.target = car.center();
         camera.position = camera.target.add(Vec3.init(0, 2, 5));
+        camera_td.target = car.center();
+        camera_td.position = camera_td.target.add(Vec3.init(0, 100, 10));
 
         rl.beginDrawing();
         defer rl.endDrawing();
@@ -142,58 +170,42 @@ pub fn main() !void {
         rl.clearBackground(rl.Color.dark_gray);
         rl.drawRectangleGradientV(0, 0, screen_width, screen_height, rl.Color.black, rl.Color.dark_gray);
 
-        {
-            rl.beginMode3D(camera);
-            defer rl.endMode3D();
+        drawScene(if (use_camera_td) camera_td else camera);
 
-            // draw floor
-            {
-                gl.rlPushMatrix();
-                defer gl.rlPopMatrix();
-
-                gl.rlSetTexture(background_texture.id);
-                gl.rlBegin(RL_QUADS);
-                gl.rlColor4f(1, 1, 1, 0.2);
-                gl.rlTexCoord2f(0, 0);
-                gl.rlVertex3f(-100, 0, -100);
-                gl.rlTexCoord2f(0, 64);
-                gl.rlVertex3f(-100, 0, 100);
-                gl.rlTexCoord2f(64, 64);
-                gl.rlVertex3f(100, 0, 100);
-                gl.rlTexCoord2f(64, 0);
-                gl.rlVertex3f(100, 0, -100);
-                gl.rlEnd();
-                gl.rlSetTexture(0);
-            }
-
-            const anim = &model_animations[1];
-            const wheel_rot = rlm.quaternionFromAxisAngle(Vec3.init(1, 0, 0), car.wheel_angle);
-            const wheel_turn = rlm.quaternionFromAxisAngle(Vec3.init(0, 1, 0), car.steering_angle);
-            anim.framePoses[0][1].rotation = wheel_turn;
-            anim.framePoses[0][2].rotation = rlm.quaternionMultiply(wheel_turn, wheel_rot);
-            anim.framePoses[0][3].rotation = wheel_turn;
-            anim.framePoses[0][4].rotation = rlm.quaternionMultiply(wheel_turn, wheel_rot);
-            anim.framePoses[0][5].rotation = wheel_rot;
-            anim.framePoses[0][6].rotation = wheel_rot;
-            rl.updateModelAnimation(model, model_animations[1], 0);
-
-            // mirror
-            gl.rlSetCullFace(@intCast(@intFromEnum(gl.rlCullMode.rl_cull_face_front)));
-            rl.drawModelEx(model, car.center(), Vec3.init(0, 1, 0), car.angle(), Vec3.init(1, -1, 1), rl.Color.white);
-            gl.rlSetCullFace(@intCast(@intFromEnum(gl.rlCullMode.rl_cull_face_back)));
-
-            rl.drawModelEx(model, car.center(), Vec3.init(0, 1, 0), car.angle(), Vec3.init(1, 1, 1), rl.Color.white);
-        }
-
-        {
+        const visualize_axles = false;
+        if (visualize_axles) {
             rl.beginMode3D(camera);
             defer rl.endMode3D();
 
             gl.rlDisableDepthTest();
-            rl.drawSphere(car.front.add(Vec3.init(0, 1, 0)), 0.1, rl.Color.red);
-            rl.drawSphere(car.back.add(Vec3.init(0, 1, 0)), 0.1, rl.Color.blue);
+            rl.drawSphere(car.front.add(Vec3.init(0, 0, 0)), 0.1, rl.Color.red);
+            rl.drawSphere(car.back.add(Vec3.init(0, 0, 0)), 0.1, rl.Color.blue);
+        }
+        // draw track
+        {
+            rl.beginMode3D(if (use_camera_td) camera_td else camera);
+            defer rl.endMode3D();
+
+            gl.rlRotatef(90, 1, 0, 0);
+            defer gl.rlLoadIdentity();
+
+            for (track_points.items, 0..) |point, i| {
+                rl.drawSphere(point, 0.5, rl.Color.red);
+                if (i >= 3 and i % 3 == 0) {
+                    drawSplineSegmentBezierCubic(
+                        track_points.items[i - 3],
+                        track_points.items[i - 2],
+                        track_points.items[i - 1],
+                        point,
+                        2,
+                        rl.Color.red,
+                    );
+                    // rl.drawLine3D(track_points.items[i - 1], point, rl.Color.red);
+                }
+            }
         }
 
+        // gauges
         rl.drawRectangleLines(40, screen_height / 2 - 300, 40, 600, rl.Color.white);
         rl.drawRectangle(40, @intFromFloat(screen_height / 2 - 15 * @max(0, car.speed)), 40, @intFromFloat(15 * @abs(car.speed)), rl.Color.white);
         rl.drawRectangleLines(100, 40, 200, 40, rl.Color.white);
@@ -202,4 +214,55 @@ pub fn main() !void {
         const alpha: f32 = @max(0, @min(1, 1 * (time - menu_time)));
         Menu.draw(alpha);
     }
+}
+
+const SPLINE_SEGMENT_DIVISIONS = 24;
+
+// Draw spline segment: Cubic Bezier, 2 points, 2 control points
+fn drawSplineSegmentBezierCubic(p1: Vec3, c2: Vec3, c3: Vec3, p4: Vec3, thick: f32, color: rl.Color) void {
+    const step = 1.0 / @as(comptime_float, SPLINE_SEGMENT_DIVISIONS);
+
+    var previous = p1;
+    var current: Vec3 = undefined;
+    var t: f32 = 0;
+
+    var points: [2 * SPLINE_SEGMENT_DIVISIONS + 2]Vec3 = undefined;
+
+    var i: usize = 1;
+    while (i <= SPLINE_SEGMENT_DIVISIONS) : (i += 1) {
+        t = step * @as(f32, @floatFromInt(i));
+
+        const a = std.math.pow(f32, 1.0 - t, 3);
+        const b = 3.0 * std.math.pow(f32, 1.0 - t, 2) * t;
+        const c = 3.0 * (1.0 - t) * std.math.pow(f32, t, 2);
+        const d = std.math.pow(f32, t, 3);
+
+        current.y = a * p1.y + b * c2.y + c * c3.y + d * p4.y;
+        current.x = a * p1.x + b * c2.x + c * c3.x + d * p4.x;
+
+        const dy = current.y - previous.y;
+        const dx = current.x - previous.x;
+        const size = 0.5 * thick / @sqrt(dx * dx + dy * dy);
+
+        if (i == 1) {
+            points[0].x = previous.x + dy * size;
+            points[0].y = previous.y - dx * size;
+            points[0].z = 0.0;
+            points[1].x = previous.x - dy * size;
+            points[1].y = previous.y + dx * size;
+            points[1].z = 0.0;
+        }
+
+        points[2 * i + 1].x = current.x - dy * size;
+        points[2 * i + 1].y = current.y + dx * size;
+        points[2 * i + 1].z = 0.0;
+        points[2 * i].x = current.x + dy * size;
+        points[2 * i].y = current.y - dx * size;
+        points[2 * i].z = 0.0;
+
+        previous = current;
+    }
+
+    rl.drawTriangleStrip3D(&points, color);
+    // DrawTriangleStrip(points, 2*SPLINE_SEGMENT_DIVISIONS + 2, color);
 }
