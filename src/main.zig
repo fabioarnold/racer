@@ -2,9 +2,11 @@ const std = @import("std");
 const rl = @import("raylib");
 const gl = rl.gl;
 const rlm = rl.math;
+const gui = @import("raygui");
 const Vec3 = rl.Vector3;
 const Car = @import("Car.zig");
 const Menu = @import("Menu.zig");
+const ResourceSystem = @import("ResourceSystem.zig");
 
 const RL_LINES = 0x0001;
 const RL_TRIANGLES = 0x0004;
@@ -20,16 +22,60 @@ var car: Car = undefined;
 var model: rl.Model = undefined;
 var background_texture: rl.Texture2D = undefined;
 
-var track_points: std.ArrayList(Vec3) = undefined;
+const TrackNode = struct {
+    pos: Vec3,
+    dir: Vec3,
+    roll: f32 = 0,
+};
+var track: std.ArrayList(TrackNode) = undefined;
+
+fn addTrackPoint(point: Vec3) !void {
+    if (track.items.len > 0) {
+        const node = &track.items[track.items.len - 1];
+        if (node.dir.equals(Vec3.zero()) != 0) {
+            node.dir = point.subtract(node.pos);
+            return;
+        }
+    }
+    try track.append(.{ .pos = point, .dir = Vec3.zero() });
+}
+
+const node_inspector_bounds = rl.Rectangle{ .x = 10, .y = 10, .width = 200, .height = 400 };
+const TrackNodeInspector = struct {
+    var node_x: [20:0]u8 = undefined;
+    var node_y: [20:0]u8 = undefined;
+    var node_z: [20:0]u8 = undefined;
+    var node_x_edit: bool = false;
+    var node_y_edit: bool = false;
+    var node_z_edit: bool = false;
+
+    fn select(node: TrackNode) void {
+        _ = try std.fmt.bufPrintZ(&node_x, "{d:.2}", .{node.pos.x});
+        _ = try std.fmt.bufPrintZ(&node_y, "{d:.2}", .{node.pos.y});
+        _ = try std.fmt.bufPrintZ(&node_z, "{d:.2}", .{node.pos.z});
+    }
+
+    fn update() void {
+        if (track.items.len > 0) {
+            const node = &track.items[0];
+            _ = gui.guiWindowBox(node_inspector_bounds, "Node");
+            if (gui.guiValueBoxFloat(.{ .x = 50, .y = 44, .width = 150, .height = 20 }, "Pos X", &node_x, &node.pos.x, node_x_edit) != 0) node_x_edit = !node_x_edit;
+            if (gui.guiValueBoxFloat(.{ .x = 50, .y = 74, .width = 150, .height = 20 }, "Pos Y", &node_y, &node.pos.y, node_y_edit) != 0) node_y_edit = !node_y_edit;
+            if (gui.guiValueBoxFloat(.{ .x = 50, .y = 104, .width = 150, .height = 20 }, "Pos Z", &node_z, &node.pos.z, node_z_edit) != 0) node_z_edit = !node_z_edit;
+        }
+    }
+};
 
 fn drawScene(camera: rl.Camera) void {
     rl.beginMode3D(camera);
     defer rl.endMode3D();
 
-    const draw_floor = false;
+    const draw_floor = true;
     if (draw_floor) {
         gl.rlPushMatrix();
         defer gl.rlPopMatrix();
+
+        gl.rlTranslatef(0, -0.1, 0);
 
         gl.rlSetTexture(background_texture.id);
         gl.rlBegin(RL_QUADS);
@@ -87,7 +133,7 @@ pub fn main() !void {
     };
     var use_camera_td = true;
 
-    track_points = std.ArrayList(Vec3).init(allocator);
+    track = std.ArrayList(TrackNode).init(allocator);
     model = rl.loadModel("data/mazda_rx7.glb");
     var model_animations = try rl.loadModelAnimations("data/mazda_rx7.glb");
     for (model_animations[0].bones[0..@intCast(model_animations[0].boneCount)], 0..) |b, i| {
@@ -107,6 +153,7 @@ pub fn main() !void {
     background_texture = rl.loadTextureFromImage(background_image);
     rl.unloadImage(background_image);
 
+    try ResourceSystem.loadCarc(allocator, "data/WiiSportsResort/Stage/Static/StageArc.carc");
 
     var steer: f32 = 0;
     car = Car.init(Vec3.zero());
@@ -115,15 +162,17 @@ pub fn main() !void {
 
     while (!rl.windowShouldClose()) {
         const time: f32 = @floatCast(rl.getTime());
-        camera.position.x = 10 * @sin(0 * time);
-        camera.position.z = 10 * @cos(0 * time);
 
-        if (rl.isMouseButtonPressed(.mouse_button_left)) {
-            const mouse_pos = rl.getMousePosition();
+        const mouse_pos = rl.getMousePosition();
+
+        // const gui_focused = gui.guiGetState() == @intFromEnum(gui.GuiState.state_focused);
+        const gui_hover = rl.checkCollisionPointRec(mouse_pos, node_inspector_bounds) and false;
+
+        if (rl.isMouseButtonPressed(.mouse_button_left) and !gui_hover) {
             const ray = rl.getScreenToWorldRay(mouse_pos, camera_td);
             const t = -ray.position.y / ray.direction.y;
             const point = ray.position.add(ray.direction.scale(t));
-            try track_points.append(Vec3.init(point.x, point.z, 0));
+            try addTrackPoint(point);
         }
         if (rl.isKeyPressed(.key_tab)) {
             use_camera_td = !use_camera_td;
@@ -143,7 +192,7 @@ pub fn main() !void {
         if (rl.isKeyDown(.key_down)) car.speed -= 0.2;
         car.speed = std.math.clamp(car.speed, -max_reverse_speed, max_forward_speed);
 
-        const max_steering_angle = 0.4;
+        const max_steering_angle = 0.4 * (1 - @abs(car.speed) / 80.0);
         car.steering_angle = -max_steering_angle * steer;
         car.integrate(1.0 / 60.0);
 
@@ -159,8 +208,9 @@ pub fn main() !void {
         anim.framePoses[0][6].rotation = wheel_rot;
         rl.updateModelAnimation(model, model_animations[1], 0);
 
-        camera.target = car.center();
-        camera.position = camera.target.add(Vec3.init(0, 2, 5));
+        camera.target = car.center().add(Vec3.init(0, 1, 0));
+        const camera_position = camera.target.add(Vec3.init(0, 2, -6).rotateByAxisAngle(Vec3.init(0, 1, 0), std.math.degreesToRadians(car.angle())));
+        camera.position = camera.position.lerp(camera_position, 0.1);
         camera_td.target = car.center();
         camera_td.position = camera_td.target.add(Vec3.init(0, 100, 10));
 
@@ -186,30 +236,40 @@ pub fn main() !void {
             rl.beginMode3D(if (use_camera_td) camera_td else camera);
             defer rl.endMode3D();
 
-            gl.rlRotatef(90, 1, 0, 0);
-            defer gl.rlLoadIdentity();
+            // gl.rlRotatef(90, 1, 0, 0);
+            // defer gl.rlLoadIdentity();
 
-            for (track_points.items, 0..) |point, i| {
-                rl.drawSphere(point, 0.5, rl.Color.red);
-                if (i >= 3 and i % 3 == 0) {
-                    drawSplineSegmentBezierCubic(
-                        track_points.items[i - 3],
-                        track_points.items[i - 2],
-                        track_points.items[i - 1],
-                        point,
-                        2,
-                        rl.Color.red,
-                    );
-                    // rl.drawLine3D(track_points.items[i - 1], point, rl.Color.red);
+            var prev_node: TrackNode = undefined;
+            for (track.items, 0..) |node, i| {
+                defer prev_node = node;
+                rl.drawSphere(node.pos, 0.5, rl.Color.red);
+                if (node.dir.equals(Vec3.zero()) != 0) {
+                    break;
                 }
+                rl.drawSphere(node.pos.add(node.dir), 0.5, rl.Color.blue);
+                rl.drawSphere(node.pos.subtract(node.dir), 0.5, rl.Color.blue);
+                if (i > 0) {
+                    drawTrackSegment(prev_node, node, 10, rl.Color.red.alpha(0.5));
+                }
+            }
+            if (track.items.len > 1 and prev_node.dir.equals(Vec3.zero()) == 0) {
+                drawTrackSegment(prev_node, track.items[0], 10, rl.Color.red.alpha(0.5));
             }
         }
 
-        // gauges
-        rl.drawRectangleLines(40, screen_height / 2 - 300, 40, 600, rl.Color.white);
-        rl.drawRectangle(40, @intFromFloat(screen_height / 2 - 15 * @max(0, car.speed)), 40, @intFromFloat(15 * @abs(car.speed)), rl.Color.white);
-        rl.drawRectangleLines(100, 40, 200, 40, rl.Color.white);
-        rl.drawRectangle(@intFromFloat(200 - 100 * @max(0, -steer)), 40, @intFromFloat(100 * @abs(steer)), 40, rl.Color.white);
+        const show_gauges = false;
+        if (show_gauges) {
+            // gauges
+            rl.drawRectangleLines(40, screen_height / 2 - 300, 40, 600, rl.Color.white);
+            rl.drawRectangle(40, @intFromFloat(screen_height / 2 - 15 * @max(0, car.speed)), 40, @intFromFloat(15 * @abs(car.speed)), rl.Color.white);
+            rl.drawRectangleLines(100, 40, 200, 40, rl.Color.white);
+            rl.drawRectangle(@intFromFloat(200 - 100 * @max(0, -steer)), 40, @intFromFloat(100 * @abs(steer)), 40, rl.Color.white);
+        }
+
+        var buf: [20]u8 = undefined;
+        const kmh_str = try std.fmt.bufPrintZ(&buf, "{d:.0} km/h", .{car.speed / kmph_to_mps});
+        const text_width = rl.measureText(kmh_str, 40);
+        rl.drawText(kmh_str, screen_width - 20 - text_width, screen_height - 40, 40, rl.Color.white);
 
         const alpha: f32 = @max(0, @min(1, 1 * (time - menu_time)));
         Menu.draw(alpha);
@@ -218,51 +278,42 @@ pub fn main() !void {
 
 const SPLINE_SEGMENT_DIVISIONS = 24;
 
-// Draw spline segment: Cubic Bezier, 2 points, 2 control points
-fn drawSplineSegmentBezierCubic(p1: Vec3, c2: Vec3, c3: Vec3, p4: Vec3, thick: f32, color: rl.Color) void {
-    const step = 1.0 / @as(comptime_float, SPLINE_SEGMENT_DIVISIONS);
+fn interpolateCubic(p1: Vec3, c2: Vec3, c3: Vec3, p4: Vec3, t: f32) Vec3 {
+    const a = std.math.pow(f32, 1.0 - t, 3);
+    const b = 3.0 * std.math.pow(f32, 1.0 - t, 2) * t;
+    const c = 3.0 * (1.0 - t) * std.math.pow(f32, t, 2);
+    const d = std.math.pow(f32, t, 3);
+    return p1.scale(a).add(c2.scale(b)).add(c3.scale(c)).add(p4.scale(d));
+}
 
-    var previous = p1;
-    var current: Vec3 = undefined;
-    var t: f32 = 0;
-
+fn drawTrackSegment(node1: TrackNode, node2: TrackNode, thick: f32, color: rl.Color) void {
     var points: [2 * SPLINE_SEGMENT_DIVISIONS + 2]Vec3 = undefined;
 
-    var i: usize = 1;
-    while (i <= SPLINE_SEGMENT_DIVISIONS) : (i += 1) {
-        t = step * @as(f32, @floatFromInt(i));
+    const y_up = Vec3.init(0, 1, 0);
 
-        const a = std.math.pow(f32, 1.0 - t, 3);
-        const b = 3.0 * std.math.pow(f32, 1.0 - t, 2) * t;
-        const c = 3.0 * (1.0 - t) * std.math.pow(f32, t, 2);
-        const d = std.math.pow(f32, t, 3);
+    const p1 = node1.pos;
+    const c2 = node1.pos.add(node1.dir);
+    const c3 = node2.pos.subtract(node2.dir);
+    const p4 = node2.pos;
 
-        current.y = a * p1.y + b * c2.y + c * c3.y + d * p4.y;
-        current.x = a * p1.x + b * c2.x + c * c3.x + d * p4.x;
-
-        const dy = current.y - previous.y;
-        const dx = current.x - previous.x;
-        const size = 0.5 * thick / @sqrt(dx * dx + dy * dy);
-
-        if (i == 1) {
-            points[0].x = previous.x + dy * size;
-            points[0].y = previous.y - dx * size;
-            points[0].z = 0.0;
-            points[1].x = previous.x - dy * size;
-            points[1].y = previous.y + dx * size;
-            points[1].z = 0.0;
+    var prev_pos: Vec3 = undefined;
+    for (0..SPLINE_SEGMENT_DIVISIONS + 1) |i| {
+        const t: f32 = @as(f32, @floatFromInt(i)) / SPLINE_SEGMENT_DIVISIONS;
+        const pos = interpolateCubic(p1, c2, c3, p4, t);
+        defer prev_pos = pos;
+        var dir: Vec3 = undefined;
+        if (i == 0) {
+            dir = node1.dir.normalize();
+        } else if (i == SPLINE_SEGMENT_DIVISIONS) {
+            dir = node2.dir.normalize();
+        } else {
+            dir = pos.subtract(prev_pos).normalize();
         }
 
-        points[2 * i + 1].x = current.x - dy * size;
-        points[2 * i + 1].y = current.y + dx * size;
-        points[2 * i + 1].z = 0.0;
-        points[2 * i].x = current.x + dy * size;
-        points[2 * i].y = current.y - dx * size;
-        points[2 * i].z = 0.0;
-
-        previous = current;
+        const side = dir.crossProduct(y_up);
+        points[2 * i + 0] = pos.add(side.scale(-0.5 * thick));
+        points[2 * i + 1] = pos.add(side.scale(0.5 * thick));
     }
 
     rl.drawTriangleStrip3D(&points, color);
-    // DrawTriangleStrip(points, 2*SPLINE_SEGMENT_DIVISIONS + 2, color);
 }

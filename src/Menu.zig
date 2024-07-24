@@ -1,6 +1,6 @@
 const rl = @import("raylib");
 
-const screen_width = 1200;
+const screen_width = 1280;
 const screen_height = 720;
 
 var selected_item: i32 = 0;
