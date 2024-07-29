@@ -25,9 +25,20 @@ var background_texture: rl.Texture2D = undefined;
 const TrackNode = struct {
     pos: Vec3,
     dir: Vec3,
-    roll: f32 = 0,
+    tilt: f32 = 0,
 };
 var track: std.ArrayList(TrackNode) = undefined;
+
+const track_data = [_]TrackNode{
+    .{ .pos = Vec3.init(-44.40104675292969, 1.721134901046753, -1.3928852081298828), .dir = Vec3.init(-0.08200836181640625, 0.0, 11.109437942504883), .tilt = 0.4923742711544037 },
+    .{ .pos = Vec3.init(-22.16115951538086, 0.0, 25.05327796936035), .dir = Vec3.init(11.108991622924805, 0.0, 0.1291065216064453) },
+    .{ .pos = Vec3.init(-0.13704636693000793, 0.0, 18.279998779296875), .dir = Vec3.init(10.364692687988281, 0.0, -0.01633453369140625) },
+    .{ .pos = Vec3.init(25.252986907958984, 0.0, 25.312191009521484), .dir = Vec3.init(10.576545715332031, 0.0, 0.17934799194335938) },
+    .{ .pos = Vec3.init(39.60963821411133, 1.8524237871170044, -1.0046038627624512), .dir = Vec3.init(-0.21197891235351562, 0.0, -10.298568725585938), .tilt = 0.7031676769256592 },
+    .{ .pos = Vec3.init(21.150728225708008, 0.0, -22.470476150512695), .dir = Vec3.init(-10.55300235748291, 0.0, -0.06367683410644531) },
+    .{ .pos = Vec3.init(-0.24440056085586548, 4.444904804229736, -22.27613067626953), .dir = Vec3.init(-8.729326248168945, 0.0, 0.1701068878173828) },
+    .{ .pos = Vec3.init(-24.074430465698242, 0.0, -21.877046585083008), .dir = Vec3.init(-14.097784042358398, 0.0, 0.08992767333984375) },
+};
 
 fn addTrackPoint(point: Vec3) !void {
     if (track.items.len > 0) {
@@ -70,7 +81,7 @@ fn drawScene(camera: rl.Camera) void {
     rl.beginMode3D(camera);
     defer rl.endMode3D();
 
-    const draw_floor = true;
+    const draw_floor = false;
     if (draw_floor) {
         gl.rlPushMatrix();
         defer gl.rlPopMatrix();
@@ -134,6 +145,7 @@ pub fn main() !void {
     var use_camera_td = true;
 
     track = std.ArrayList(TrackNode).init(allocator);
+    try track.appendSlice(&track_data);
     model = rl.loadModel("data/mazda_rx7.glb");
     var model_animations = try rl.loadModelAnimations("data/mazda_rx7.glb");
     for (model_animations[0].bones[0..@intCast(model_animations[0].boneCount)], 0..) |b, i| {
@@ -310,10 +322,16 @@ fn drawTrackSegment(node1: TrackNode, node2: TrackNode, thick: f32, color: rl.Co
             dir = pos.subtract(prev_pos).normalize();
         }
 
-        const side = dir.crossProduct(y_up);
+        const ease_t = easeInOutQuad(t);
+        const tilt = std.math.lerp(node1.tilt, node2.tilt, ease_t);
+        const side = y_up.rotateByAxisAngle(dir, 0.5 * std.math.pi - tilt);
         points[2 * i + 0] = pos.add(side.scale(-0.5 * thick));
         points[2 * i + 1] = pos.add(side.scale(0.5 * thick));
     }
 
     rl.drawTriangleStrip3D(&points, color);
+}
+
+fn easeInOutQuad(t: f32) f32 {
+    return if (t < 0.5) 2 * t * t else 1 - 2 * (1 - t) * (1 - t);
 }
