@@ -24,7 +24,7 @@ var background_texture: rl.Texture2D = undefined;
 
 const TrackNode = struct {
     pos: Vec3,
-    dir: Vec3,
+    dir: Vec3, // TODO: left handle + right handle
     tilt: f32 = 0,
 };
 var track: std.ArrayList(TrackNode) = undefined;
@@ -330,6 +330,26 @@ fn drawTrackSegment(node1: TrackNode, node2: TrackNode, thick: f32, color: rl.Co
     }
 
     rl.drawTriangleStrip3D(&points, color);
+}
+
+fn calcTrackSegmentLength(node1: TrackNode, node2: TrackNode) f32 {
+    const p1 = node1.pos;
+    const c2 = node1.pos.add(node1.dir);
+    const c3 = node2.pos.subtract(node2.dir);
+    const p4 = node2.pos;
+
+    // TODO: recursively subdivide and average between coords and control net until convergence
+
+    var length: f32 = 0;
+    var prev_pos: Vec3 = undefined;
+    for (0..SPLINE_SEGMENT_DIVISIONS + 1) |i| {
+        const t: f32 = @as(f32, @floatFromInt(i)) / SPLINE_SEGMENT_DIVISIONS;
+        const pos = interpolateCubic(p1, c2, c3, p4, t);
+        defer prev_pos = pos;
+        length += pos.subtract(prev_pos).length();
+    }
+
+    return length;
 }
 
 fn easeInOutQuad(t: f32) f32 {
