@@ -165,7 +165,7 @@ pub fn main() !void {
     background_texture = rl.loadTextureFromImage(background_image);
     rl.unloadImage(background_image);
 
-    try ResourceSystem.loadCarc(allocator, "data/WiiSportsResort/Stage/Static/StageArc.carc");
+    //try ResourceSystem.loadCarc(allocator, "data/WiiSportsResort/Stage/Static/StageArc.carc");
 
     var steer: f32 = 0;
     car = Car.init(Vec3.zero());
@@ -180,8 +180,13 @@ pub fn main() !void {
         // const gui_focused = gui.guiGetState() == @intFromEnum(gui.GuiState.state_focused);
         const gui_hover = rl.checkCollisionPointRec(mouse_pos, node_inspector_bounds) and false;
 
+        const ray = rl.getScreenToWorldRay(mouse_pos, if (use_camera_td) camera_td else camera);
+        var point_on_track: ?Vec3 = null;
+        if (getRayCollisionTrack(ray)) |t| {
+            point_on_track = ray.position.add(ray.direction.scale(t));
+        }
+
         if (rl.isMouseButtonPressed(.mouse_button_left) and !gui_hover) {
-            const ray = rl.getScreenToWorldRay(mouse_pos, camera_td);
             const t = -ray.position.y / ray.direction.y;
             const point = ray.position.add(ray.direction.scale(t));
             try addTrackPoint(point);
@@ -251,21 +256,19 @@ pub fn main() !void {
             // gl.rlRotatef(90, 1, 0, 0);
             // defer gl.rlLoadIdentity();
 
-            var prev_node: TrackNode = undefined;
             for (track.items, 0..) |node, i| {
-                defer prev_node = node;
                 rl.drawSphere(node.pos, 0.5, rl.Color.red);
                 if (node.dir.equals(Vec3.zero()) != 0) {
                     break;
                 }
                 rl.drawSphere(node.pos.add(node.dir), 0.5, rl.Color.blue);
                 rl.drawSphere(node.pos.subtract(node.dir), 0.5, rl.Color.blue);
-                if (i > 0) {
-                    drawTrackSegment(prev_node, node, 10, rl.Color.red.alpha(0.5));
-                }
+                const next_node = track.items[(i + 1) % track.items.len];
+                drawTrackSegment(node, next_node, 10, rl.Color.red.alpha(0.5));
             }
-            if (track.items.len > 1 and prev_node.dir.equals(Vec3.zero()) == 0) {
-                drawTrackSegment(prev_node, track.items[0], 10, rl.Color.red.alpha(0.5));
+
+            if (point_on_track) |point| {
+                rl.drawSphere(point, 0.5, rl.Color.green);
             }
         }
 
@@ -288,6 +291,34 @@ pub fn main() !void {
     }
 }
 
+fn getRayCollisionTrack(ray: rl.Ray) ?f32 {
+    for (track.items, 0..) |node, i| {
+        const next_node = track.items[(i + 1) % track.items.len];
+        if (getRayCollisionTrackSegment(ray, node, next_node)) |t| {
+            return t;
+        }
+    }
+    return null;
+}
+
+fn getRayCollisionTrackSegment(ray: rl.Ray, node1: TrackNode, node2: TrackNode) ?f32 {
+    var points: [2 * SPLINE_SEGMENT_DIVISIONS + 2]Vec3 = undefined;
+    evaluateTrackSegment(node1, node2, 10, &points);
+
+    for (0..SPLINE_SEGMENT_DIVISIONS) |i| {
+        const p1 = points[2 * i + 0];
+        const p2 = points[2 * i + 1];
+        const p3 = points[2 * i + 3];
+        const p4 = points[2 * i + 2];
+        const result = rl.getRayCollisionQuad(ray, p1, p2, p3, p4);
+        if (result.hit) {
+            return result.distance;
+        }
+    }
+
+    return null;
+}
+
 const SPLINE_SEGMENT_DIVISIONS = 24;
 
 fn interpolateCubic(p1: Vec3, c2: Vec3, c3: Vec3, p4: Vec3, t: f32) Vec3 {
@@ -298,9 +329,7 @@ fn interpolateCubic(p1: Vec3, c2: Vec3, c3: Vec3, p4: Vec3, t: f32) Vec3 {
     return p1.scale(a).add(c2.scale(b)).add(c3.scale(c)).add(p4.scale(d));
 }
 
-fn drawTrackSegment(node1: TrackNode, node2: TrackNode, thick: f32, color: rl.Color) void {
-    var points: [2 * SPLINE_SEGMENT_DIVISIONS + 2]Vec3 = undefined;
-
+fn evaluateTrackSegment(node1: TrackNode, node2: TrackNode, thick: f32, points: *[2 * SPLINE_SEGMENT_DIVISIONS + 2]Vec3) void {
     const y_up = Vec3.init(0, 1, 0);
 
     const p1 = node1.pos;
@@ -328,7 +357,11 @@ fn drawTrackSegment(node1: TrackNode, node2: TrackNode, thick: f32, color: rl.Co
         points[2 * i + 0] = pos.add(side.scale(-0.5 * thick));
         points[2 * i + 1] = pos.add(side.scale(0.5 * thick));
     }
+}
 
+fn drawTrackSegment(node1: TrackNode, node2: TrackNode, thick: f32, color: rl.Color) void {
+    var points: [2 * SPLINE_SEGMENT_DIVISIONS + 2]Vec3 = undefined;
+    evaluateTrackSegment(node1, node2, thick, &points);
     rl.drawTriangleStrip3D(&points, color);
 }
 
