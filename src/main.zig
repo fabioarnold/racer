@@ -215,6 +215,21 @@ pub fn main() !void {
         car.steering_angle = -max_steering_angle * steer;
         car.integrate(1.0 / 60.0);
 
+        // project car onto track
+        // TODO: need the surface normals for the orientation
+        {
+            const ray_front = rl.Ray{ .position = car.front.add(Vec3.init(0, 1, 0)), .direction = Vec3.init(0, -1, 0) };
+            const result_front = getRayCollisionTrack(ray_front);
+            if (result_front.hit) {
+                const ray_back = rl.Ray{ .position = car.back.add(Vec3.init(0, 1, 0)), .direction = Vec3.init(0, -1, 0) };
+                const result_back = getRayCollisionTrack(ray_back);
+                if (result_back.hit) {
+                    car.front.y = result_front.point.y;
+                    car.back.y = result_back.point.y;
+                }
+            }
+        }
+
         // update car animation
         const anim = &model_animations[1];
         const wheel_rot = rlm.quaternionFromAxisAngle(Vec3.init(1, 0, 0), car.wheel_angle);
