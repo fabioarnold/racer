@@ -24,32 +24,33 @@ var background_texture: rl.Texture2D = undefined;
 
 const TrackNode = struct {
     pos: Vec3,
-    dir: Vec3, // TODO: left handle + right handle
+    left_handle: Vec3,
+    right_handle: Vec3,
     tilt: f32 = 0,
 };
 var track: std.ArrayList(TrackNode) = undefined;
 
 const track_data = [_]TrackNode{
-    .{ .pos = Vec3.init(-44.40104675292969, 1.721134901046753, -1.3928852081298828), .dir = Vec3.init(-0.08200836181640625, 0.0, 11.109437942504883), .tilt = 0.4923742711544037 },
-    .{ .pos = Vec3.init(-22.16115951538086, 0.0, 25.05327796936035), .dir = Vec3.init(11.108991622924805, 0.0, 0.1291065216064453) },
-    .{ .pos = Vec3.init(-0.13704636693000793, 0.0, 18.279998779296875), .dir = Vec3.init(10.364692687988281, 0.0, -0.01633453369140625) },
-    .{ .pos = Vec3.init(25.252986907958984, 0.0, 25.312191009521484), .dir = Vec3.init(10.576545715332031, 0.0, 0.17934799194335938) },
-    .{ .pos = Vec3.init(39.60963821411133, 1.8524237871170044, -1.0046038627624512), .dir = Vec3.init(-0.21197891235351562, 0.0, -10.298568725585938), .tilt = 0.7031676769256592 },
-    .{ .pos = Vec3.init(21.150728225708008, 0.0, -22.470476150512695), .dir = Vec3.init(-10.55300235748291, 0.0, -0.06367683410644531) },
-    .{ .pos = Vec3.init(-0.24440056085586548, 4.444904804229736, -22.27613067626953), .dir = Vec3.init(-8.729326248168945, 0.0, 0.1701068878173828) },
-    .{ .pos = Vec3.init(-24.074430465698242, 0.0, -21.877046585083008), .dir = Vec3.init(-14.097784042358398, 0.0, 0.08992767333984375) },
+    .{ .pos = Vec3.init(-44.40104675292969, 1.721134901046753, -1.3928852081298828), .left_handle = Vec3.init(0.09521102905273438, 0.0, -12.897957801818848), .right_handle = Vec3.init(-0.08200836181640625, 0.0, 11.109437942504883), .tilt = 0.4923742711544037 },
+    .{ .pos = Vec3.init(-22.16115951538086, 0.0, 25.05327796936035), .left_handle = Vec3.init(-10.459827423095703, 0.0, -0.12156295776367188), .right_handle = Vec3.init(11.108991622924805, 0.0, 0.1291065216064453), .tilt = 0.0 },
+    .{ .pos = Vec3.init(-0.13704636693000793, 0.0, 18.279998779296875), .left_handle = Vec3.init(-9.759026527404785, 0.0, 0.015380859375), .right_handle = Vec3.init(10.364692687988281, 0.0, -0.01633453369140625), .tilt = 0.0 },
+    .{ .pos = Vec3.init(25.252986907958984, 0.0, 25.312191009521484), .left_handle = Vec3.init(-10.450516700744629, 0.0, -0.17721176147460938), .right_handle = Vec3.init(10.576545715332031, 0.0, 0.17934799194335938), .tilt = 0.0 },
+    .{ .pos = Vec3.init(39.60963821411133, 1.8524237871170044, -1.0046038627624512), .left_handle = Vec3.init(0.18136978149414062, 0.0, 8.81155776977539), .right_handle = Vec3.init(-0.21197891235351562, 0.0, -10.298568725585938), .tilt = 0.7031676769256592 },
+    .{ .pos = Vec3.init(21.150728225708008, 0.0, -22.470476150512695), .left_handle = Vec3.init(9.56886100769043, 0.0, 0.0577392578125), .right_handle = Vec3.init(-10.55300235748291, 0.0, -0.06367683410644531), .tilt = 0.0 },
+    .{ .pos = Vec3.init(-0.24440056085586548, 4.444904804229736, -22.27613067626953), .left_handle = Vec3.init(7.496023178100586, 0.0, -0.1460742950439453), .right_handle = Vec3.init(-8.729326248168945, 0.0, 0.1701068878173828), .tilt = 0.0 },
+    .{ .pos = Vec3.init(-24.074430465698242, 0.0, -21.877046585083008), .left_handle = Vec3.init(11.414963722229004, 0.0, -0.07281494140625), .right_handle = Vec3.init(-14.097784042358398, 0.0, 0.08992767333984375), .tilt = 0.0 },
 };
 
-fn addTrackPoint(point: Vec3) !void {
-    if (track.items.len > 0) {
-        const node = &track.items[track.items.len - 1];
-        if (node.dir.equals(Vec3.zero()) != 0) {
-            node.dir = point.subtract(node.pos);
-            return;
-        }
-    }
-    try track.append(.{ .pos = point, .dir = Vec3.zero() });
-}
+// fn addTrackPoint(point: Vec3) !void {
+//     if (track.items.len > 0) {
+//         const node = &track.items[track.items.len - 1];
+//         if (node.dir.equals(Vec3.zero()) != 0) {
+//             node.dir = point.subtract(node.pos);
+//             return;
+//         }
+//     }
+//     try track.append(.{ .pos = point, .dir = Vec3.zero() });
+// }
 
 const node_inspector_bounds = rl.Rectangle{ .x = 10, .y = 10, .width = 200, .height = 400 };
 const TrackNodeInspector = struct {
@@ -178,19 +179,20 @@ pub fn main() !void {
         const mouse_pos = rl.getMousePosition();
 
         // const gui_focused = gui.guiGetState() == @intFromEnum(gui.GuiState.state_focused);
-        const gui_hover = rl.checkCollisionPointRec(mouse_pos, node_inspector_bounds) and false;
+        // const gui_hover = rl.checkCollisionPointRec(mouse_pos, node_inspector_bounds) and false;
 
         const ray = rl.getScreenToWorldRay(mouse_pos, if (use_camera_td) camera_td else camera);
         var point_on_track: ?Vec3 = null;
-        if (getRayCollisionTrack(ray)) |t| {
-            point_on_track = ray.position.add(ray.direction.scale(t));
+        const result = getRayCollisionTrack(ray);
+        if (result.hit) {
+            point_on_track = result.point;
         }
 
-        if (rl.isMouseButtonPressed(.mouse_button_left) and !gui_hover) {
-            const t = -ray.position.y / ray.direction.y;
-            const point = ray.position.add(ray.direction.scale(t));
-            try addTrackPoint(point);
-        }
+        // if (rl.isMouseButtonPressed(.mouse_button_left) and !gui_hover) {
+        //     const t = -ray.position.y / ray.direction.y;
+        //     const point = ray.position.add(ray.direction.scale(t));
+        //     try addTrackPoint(point);
+        // }
         if (rl.isKeyPressed(.key_tab)) {
             use_camera_td = !use_camera_td;
         }
@@ -258,11 +260,8 @@ pub fn main() !void {
 
             for (track.items, 0..) |node, i| {
                 rl.drawSphere(node.pos, 0.5, rl.Color.red);
-                if (node.dir.equals(Vec3.zero()) != 0) {
-                    break;
-                }
-                rl.drawSphere(node.pos.add(node.dir), 0.5, rl.Color.blue);
-                rl.drawSphere(node.pos.subtract(node.dir), 0.5, rl.Color.blue);
+                rl.drawSphere(node.pos.add(node.left_handle), 0.5, rl.Color.blue);
+                rl.drawSphere(node.pos.add(node.right_handle), 0.5, rl.Color.blue);
                 const next_node = track.items[(i + 1) % track.items.len];
                 drawTrackSegment(node, next_node, 10, rl.Color.red.alpha(0.5));
             }
@@ -291,17 +290,20 @@ pub fn main() !void {
     }
 }
 
-fn getRayCollisionTrack(ray: rl.Ray) ?f32 {
+fn getRayCollisionTrack(ray: rl.Ray) rl.RayCollision {
     for (track.items, 0..) |node, i| {
         const next_node = track.items[(i + 1) % track.items.len];
-        if (getRayCollisionTrackSegment(ray, node, next_node)) |t| {
-            return t;
+        const result = getRayCollisionTrackSegment(ray, node, next_node);
+        if (result.hit) {
+            return result;
         }
     }
-    return null;
+    var neg_result: rl.RayCollision = undefined;
+    neg_result.hit = false;
+    return neg_result;
 }
 
-fn getRayCollisionTrackSegment(ray: rl.Ray, node1: TrackNode, node2: TrackNode) ?f32 {
+fn getRayCollisionTrackSegment(ray: rl.Ray, node1: TrackNode, node2: TrackNode) rl.RayCollision {
     var points: [2 * SPLINE_SEGMENT_DIVISIONS + 2]Vec3 = undefined;
     evaluateTrackSegment(node1, node2, 10, &points);
 
@@ -312,11 +314,12 @@ fn getRayCollisionTrackSegment(ray: rl.Ray, node1: TrackNode, node2: TrackNode) 
         const p4 = points[2 * i + 2];
         const result = rl.getRayCollisionQuad(ray, p1, p2, p3, p4);
         if (result.hit) {
-            return result.distance;
+            return result;
         }
     }
-
-    return null;
+    var neg_result: rl.RayCollision = undefined;
+    neg_result.hit = false;
+    return neg_result;
 }
 
 const SPLINE_SEGMENT_DIVISIONS = 24;
@@ -333,8 +336,8 @@ fn evaluateTrackSegment(node1: TrackNode, node2: TrackNode, thick: f32, points: 
     const y_up = Vec3.init(0, 1, 0);
 
     const p1 = node1.pos;
-    const c2 = node1.pos.add(node1.dir);
-    const c3 = node2.pos.subtract(node2.dir);
+    const c2 = node1.pos.add(node1.right_handle);
+    const c3 = node2.pos.add(node2.left_handle);
     const p4 = node2.pos;
 
     var prev_pos: Vec3 = undefined;
@@ -344,9 +347,9 @@ fn evaluateTrackSegment(node1: TrackNode, node2: TrackNode, thick: f32, points: 
         defer prev_pos = pos;
         var dir: Vec3 = undefined;
         if (i == 0) {
-            dir = node1.dir.normalize();
+            dir = node1.right_handle.normalize();
         } else if (i == SPLINE_SEGMENT_DIVISIONS) {
-            dir = node2.dir.normalize();
+            dir = node2.right_handle.normalize();
         } else {
             dir = pos.subtract(prev_pos).normalize();
         }
@@ -367,8 +370,8 @@ fn drawTrackSegment(node1: TrackNode, node2: TrackNode, thick: f32, color: rl.Co
 
 fn calcTrackSegmentLength(node1: TrackNode, node2: TrackNode) f32 {
     const p1 = node1.pos;
-    const c2 = node1.pos.add(node1.dir);
-    const c3 = node2.pos.subtract(node2.dir);
+    const c2 = node1.pos.add(node1.right_handle);
+    const c3 = node2.pos.add(node2.left_handle);
     const p4 = node2.pos;
 
     // TODO: recursively subdivide and average between coords and control net until convergence
