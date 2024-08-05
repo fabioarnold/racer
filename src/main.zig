@@ -218,14 +218,14 @@ pub fn main() !void {
         // project car onto track
         // TODO: need the surface normals for the orientation
         {
-            const ray_front = rl.Ray{ .position = car.front.add(Vec3.init(0, 1, 0)), .direction = Vec3.init(0, -1, 0) };
+            const ray_front = rl.Ray{ .position = car.front.add(Vec3.init(0, 100, 0)), .direction = Vec3.init(0, -1, 0) };
             const result_front = getRayCollisionTrack(ray_front);
             if (result_front.hit) {
-                const ray_back = rl.Ray{ .position = car.back.add(Vec3.init(0, 1, 0)), .direction = Vec3.init(0, -1, 0) };
+                const ray_back = rl.Ray{ .position = car.back.add(Vec3.init(0, 100, 0)), .direction = Vec3.init(0, -1, 0) };
                 const result_back = getRayCollisionTrack(ray_back);
                 if (result_back.hit) {
-                    car.front.y = result_front.point.y;
-                    car.back.y = result_back.point.y;
+                    car.front = result_front.point;
+                    car.back = result_back.point;
                 }
             }
         }
@@ -256,9 +256,9 @@ pub fn main() !void {
 
         drawScene(if (use_camera_td) camera_td else camera);
 
-        const visualize_axles = false;
+        const visualize_axles = true;
         if (visualize_axles) {
-            rl.beginMode3D(camera);
+            rl.beginMode3D(if (use_camera_td) camera_td else camera);
             defer rl.endMode3D();
 
             gl.rlDisableDepthTest();
@@ -267,6 +267,9 @@ pub fn main() !void {
         }
         // draw track
         {
+            gl.rlEnableWireMode();
+            defer gl.rlDisableWireMode();
+
             rl.beginMode3D(if (use_camera_td) camera_td else camera);
             defer rl.endMode3D();
 
