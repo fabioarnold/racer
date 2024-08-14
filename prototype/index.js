@@ -62,12 +62,22 @@ const track_data = [
   },
 ];
 
-canvas.addEventListener("mousemove", function (e) {
+canvas.addEventListener("mousedown", function (e) {
   const x = e.offsetX;
   const y = e.offsetY;
 
   player_x = (x - 900) / 12;
   player_y = (y - 400) / 12;
+  dir_x = 0;
+  dir_y = 0;
+});
+
+canvas.addEventListener("mousemove", function (e) {
+  const x = e.offsetX;
+  const y = e.offsetY;
+
+  dir_x = (x - 900) / 12 - player_x;
+  dir_y = (y - 400) / 12 - player_y;
   return;
 
   const [u, v] = reverseBilinearInterpolate(x, y, points[0], points[1], points[3], points[2]);
@@ -80,6 +90,8 @@ canvas.addEventListener("mousemove", function (e) {
 
 let player_x = 0;
 let player_y = 0;
+let dir_x = 0;
+let dir_y = 0;
 
 function pointInQuad(p, p1, p2, p3, p4) {
   const A = calculateTriangleArea(p1, p2, p3) + calculateTriangleArea(p1, p3, p4);
@@ -139,11 +151,46 @@ function drawTrack() {
     ctx.lineTo(quad[2].x, quad[2].y);
     ctx.lineTo(quad[3].x, quad[3].y);
     ctx.closePath();
-    ctx.fillStyle = "blue";
+    ctx.fillStyle = "rgba(0,0,255,0.5)";
   }
 
   ctx.resetTransform();
   ctx.fill();
+
+  // visualize direction
+  ctx.translate(900, 400);
+  ctx.scale(12, 12);
+
+  ctx.beginPath();
+  ctx.moveTo(player_x, player_y);
+  ctx.lineTo(player_x + dir_x, player_y + dir_y);
+  ctx.strokeStyle = "red";
+
+  ctx.resetTransform();
+  ctx.stroke();
+  ctx.strokeStyle = "black";
+}
+
+function slideMove(move_x, move_y) {
+  // TODO
+  player_x += move_x; 
+  player_y += move_y;
+}
+
+function intersectRayLine(p, dir, p1, p2) {
+  const v1 = subtract(p1, p);
+  const v2 = subtract(p2, p);
+  const v3 = { x: -dir.y, y: dir.x, z: 0 };
+
+  const d1 = v1.x * v3.x + v1.y * v3.y;
+  const d2 = v2.x * v3.x + v2.y * v3.y;
+
+  if (d1 * d2 >= 0) {
+    return null;
+  }
+
+  const t = d1 / (d1 - d2);
+  return add(p, scale(dir, t));
 }
 
 function interpolateCubic(p1, c1, c2, p2, t) {
