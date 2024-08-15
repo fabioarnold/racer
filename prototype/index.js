@@ -62,24 +62,54 @@ const track_data = [
   },
 ];
 
+let track = undefined;
+function initTrack() {
+  // transform track data coordinates
+  for (let n = 0; n < track_data.length; n++) {
+    const node = track_data[n];
+    track_data[n].pos = add(scale(node.pos, 12), { x: 900, y: 400, z: 0 });
+    track_data[n].left_handle = scale(node.left_handle, 12);
+    track_data[n].right_handle = scale(node.right_handle, 12);
+  }
+
+  track = { segments: [] };
+  for (let n = 0; n < track_data.length; n++) {
+    const segment = { quads: [] };
+    const points = evaluateTrackSegment(track_data[n], track_data[(n + 1) % track_data.length], 60);
+    for (let i = 0; i < points.length - 3; i += 2) {
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const p3 = points[i + 3];
+      const p4 = points[i + 2];
+      segment.quads.push([p1, p2, p3, p4]);
+    }
+    track.segments.push(segment);
+  }
+
+  // const pq = track.segments[player.segment].quads[player.quad];
+  // player.pos = scale(add(add(pq[0], pq[1]), add(pq[2], pq[3])), 0.25);
+}
+
 canvas.addEventListener("mousedown", function (e) {
   const x = e.offsetX;
   const y = e.offsetY;
 
-  player_x = (x - 900) / 12;
-  player_y = (y - 400) / 12;
-  dir_x = 0;
-  dir_y = 0;
+  return;
+  playerSlideMove(player.dir);
+
+  player.dir.x = x - player.pos.x;
+  player.dir.y = y - player.pos.y;
 });
 
 canvas.addEventListener("mousemove", function (e) {
   const x = e.offsetX;
   const y = e.offsetY;
 
-  dir_x = (x - 900) / 12 - player_x;
-  dir_y = (y - 400) / 12 - player_y;
   return;
+  player.dir.x = x - player.pos.x;
+  player.dir.y = y - player.pos.y;
 
+  return;
   const [u, v] = reverseBilinearInterpolate(x, y, points[0], points[1], points[3], points[2]);
 
   sliderU.value = u;
@@ -88,10 +118,22 @@ canvas.addEventListener("mousemove", function (e) {
   sliderV.dispatchEvent(new Event("input"));
 });
 
-let player_x = 0;
-let player_y = 0;
-let dir_x = 0;
-let dir_y = 0;
+let keys = [];
+window.addEventListener("keydown", function (e) {
+  keys[e.key] = true;
+});
+window.addEventListener("keyup", function (e) {
+  keys[e.key] = false;
+});
+
+let player = {
+  pos: { x: 0, y: 0 },
+  dir: { x: 0, y: 0 },
+  angle: 0,
+  speed: 0,
+  segment: 0,
+  quad: 0,
+};
 
 function pointInQuad(p, p1, p2, p3, p4) {
   const A = calculateTriangleArea(p1, p2, p3) + calculateTriangleArea(p1, p3, p4);
@@ -103,9 +145,7 @@ function pointInQuad(p, p1, p2, p3, p4) {
 }
 
 function drawTrack() {
-  ctx.translate(900, 400);
-  ctx.scale(12, 12);
-
+  // draw bezier curves
   ctx.beginPath();
   ctx.moveTo(track_data[0].pos.x, track_data[0].pos.y);
   for (let i = 0; i < track_data.length; i++) {
@@ -117,80 +157,158 @@ function drawTrack() {
     ctx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, p.x, p.y);
   }
 
-  let quad = null;
-  for (let n = 0; n < track_data.length; n++) {
-    const points = evaluateTrackSegment(track_data[n], track_data[(n + 1) % track_data.length], 5);
-    for (let i = 0; i < points.length - 3; i += 2) {
-      const p1 = points[i];
-      const p2 = points[i + 1];
-      const p3 = points[i + 3];
-      const p4 = points[i + 2];
-      ctx.moveTo(p1.x, p1.y);
-      ctx.lineTo(p2.x, p2.y);
-      ctx.lineTo(p3.x, p3.y);
-      ctx.moveTo(p1.x, p1.y);
-      ctx.lineTo(p4.x, p4.y);
-      if (pointInQuad({ x: player_x, y: player_y }, p1, p2, p3, p4)) {
-        quad = [ p1, p2, p3, p4 ];
-      }
+  for (let n = 0; n < track.segments.length; n++) {
+    const segment = track.segments[n];
+    for (let i = 0; i < segment.quads.length; i++) {
+      const quad = segment.quads[i];
+      ctx.moveTo(quad[0].x, quad[0].y);
+      ctx.lineTo(quad[1].x, quad[1].y);
+      ctx.lineTo(quad[2].x, quad[2].y);
+      ctx.moveTo(quad[0].x, quad[0].y);
+      ctx.lineTo(quad[3].x, quad[3].y);
     }
   }
-  ctx.resetTransform();
+  ctx.strokeStyle = "black";
   ctx.stroke();
 
-  ctx.translate(900, 400);
-  ctx.scale(12, 12);
-
   ctx.beginPath();
-  ctx.arc(player_x, player_y, 5/12, 0, Math.PI * 2);
+  ctx.arc(player.pos.x, player.pos.y, 5, 0, Math.PI * 2);
   ctx.fillStyle = "red";
 
-  if (quad) {
-    ctx.moveTo(quad[0].x, quad[0].y);
-    ctx.lineTo(quad[1].x, quad[1].y);
-    ctx.lineTo(quad[2].x, quad[2].y);
-    ctx.lineTo(quad[3].x, quad[3].y);
+  const player_quad = track.segments[player.segment].quads[player.quad];
+  if (pointInQuad(player.pos, ...player_quad)) {
+    ctx.moveTo(player_quad[0].x, player_quad[0].y);
+    ctx.lineTo(player_quad[1].x, player_quad[1].y);
+    ctx.lineTo(player_quad[2].x, player_quad[2].y);
+    ctx.lineTo(player_quad[3].x, player_quad[3].y);
     ctx.closePath();
     ctx.fillStyle = "rgba(0,0,255,0.5)";
   }
-
-  ctx.resetTransform();
   ctx.fill();
 
   // visualize direction
-  ctx.translate(900, 400);
-  ctx.scale(12, 12);
-
+  let hit = add(player.pos, player.dir);
   ctx.beginPath();
-  ctx.moveTo(player_x, player_y);
-  ctx.lineTo(player_x + dir_x, player_y + dir_y);
+  ctx.moveTo(player.pos.x, player.pos.y);
+  ctx.lineTo(hit.x, hit.y);
   ctx.strokeStyle = "red";
-
-  ctx.resetTransform();
   ctx.stroke();
-  ctx.strokeStyle = "black";
 }
 
-function slideMove(move_x, move_y) {
-  // TODO
-  player_x += move_x; 
-  player_y += move_y;
+function playerSnapToQuad(quad) {
+  for (let i = 0; i < 4; i++) {
+    let normal = subtract(quad[(i + 1) % 4], quad[i]);
+    normal = normalize({ x: normal.y, y: -normal.x });
+    const d = subtract(player.pos, quad[i]);
+    const dot = d.x * normal.x + d.y * normal.y;
+    if (dot < 0.01) {
+      player.pos = add(player.pos, scale(normal, -dot + 0.01));
+    }
+  }
 }
 
-function intersectRayLine(p, dir, p1, p2) {
-  const v1 = subtract(p1, p);
-  const v2 = subtract(p2, p);
-  const v3 = { x: -dir.y, y: dir.x, z: 0 };
+function playerSlideMove(move) {
+  const segment = track.segments[player.segment];
+  const quad = segment.quads[player.quad];
 
-  const d1 = v1.x * v3.x + v1.y * v3.y;
-  const d2 = v2.x * v3.x + v2.y * v3.y;
+  playerSnapToQuad(quad);
 
-  if (d1 * d2 >= 0) {
-    return null;
+  let move_forward = false; // are we moving to the next or previous quad
+  let t = 1e6;
+  const t_forward = intersectRayLine(player.pos, move, quad[2], quad[3]);
+  if (t_forward) {
+    move_forward = true;
+    t = t_forward;
+  } else {
+    t_back = intersectRayLine(player.pos, move, quad[0], quad[1]);
+    if (t_back) {
+      move_forward = false;
+      t = t_back;
+    }
   }
 
-  const t = d1 / (d1 - d2);
-  return add(p, scale(dir, t));
+  t_left = intersectRayLine(player.pos, move, quad[3], quad[0]);
+  if (t_left && t_left < t) {
+    t = t_left;
+    const step = scale(move, Math.min(1, t));
+    player.pos = add(player.pos, step);
+    if (t < 1) {
+      move = subtract(move, step);
+
+      // clip move by normal
+      let normal = subtract(quad[0], quad[3]);
+      normal = normalize({ x: normal.y, y: -normal.x });
+      const dot = normal.x * move.x + normal.y * move.y;
+      move = subtract(move, scale(normal, dot));
+      playerSlideMove(move);
+    }
+    return;
+  }
+
+  t_right = intersectRayLine(player.pos, move, quad[1], quad[2]);
+  if (t_right && t_right < t) {
+    t = t_right;
+    const step = scale(move, Math.min(1, t));
+    player.pos = add(player.pos, step);
+    if (t < 1) {
+      move = subtract(move, step);
+
+      // clip move by normal
+      let normal = subtract(quad[2], quad[1]);
+      normal = normalize({ x: normal.y, y: -normal.x });
+      const dot = normal.x * move.x + normal.y * move.y;
+      move = subtract(move, scale(normal, dot));
+      playerSlideMove(move);
+    }
+    return;
+  }
+
+  const step = scale(move, Math.min(1, t));
+  player.pos = add(player.pos, step);
+
+  if (t < 1) {
+    // go to next/previous quad
+    if (move_forward) {
+      player.quad++;
+      if (player.quad == segment.quads.length) {
+        player.quad = 0;
+        player.segment++;
+        if (player.segment == track.segments.length) {
+          player.segment = 0;
+        }
+      }
+    } else {
+      player.quad--;
+      if (player.quad == -1) {
+        player.quad = segment.quads.length - 1;
+        player.segment--;
+        if (player.segment == -1) {
+          player.segment = track.segments.length - 1;
+        }
+      }
+    }
+
+    move = subtract(move, step);
+    playerSlideMove(move);
+  }
+}
+
+function intersectRayLine(ro, rd, l1, l2) {
+  const v1 = subtract(l1, ro);
+  const v2 = subtract(l2, l1);
+
+  const denom = rd.x * v2.y - rd.y * v2.x;
+
+  if (Math.abs(denom) < 0.0001) {
+    return null; // parallel
+  }
+
+  const t = (v1.x * v2.y - v1.y * v2.x) / denom;
+  if (t < 0.0001) {
+    return null; // behind
+  }
+
+  return t;
 }
 
 function interpolateCubic(p1, c1, c2, p2, t) {
@@ -237,6 +355,15 @@ function evaluateTrackSegment(node1, node2, thick) {
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+  if (keys["ArrowUp"]) player.speed += 1;
+  if (keys["ArrowDown"]) player.speed -= 1;
+  if (keys["ArrowLeft"]) player.angle -= 0.04;
+  if (keys["ArrowRight"]) player.angle += 0.04;
+
+  player.dir.x = Math.cos(player.angle) * player.speed;
+  player.dir.y = Math.sin(player.angle) * player.speed;
+  playerSlideMove(scale(player.dir, 1.0 / 60.0));
+
   drawTrack();
 
   const drawBilinearTest = false;
@@ -281,20 +408,20 @@ function lerp(p0, p1, t) {
 }
 
 function add(p1, p2) {
-  return { x: p1.x + p2.x, y: p1.y + p2.y, z: p1.z + p2.z };
+  return { x: p1.x + p2.x, y: p1.y + p2.y };
 }
 
 function subtract(p1, p2) {
-  return { x: p1.x - p2.x, y: p1.y - p2.y, z: p1.z - p2.z };
+  return { x: p1.x - p2.x, y: p1.y - p2.y };
 }
 
 function scale(p, s) {
-  return { x: p.x * s, y: p.y * s, z: p.z * s };
+  return { x: p.x * s, y: p.y * s };
 }
 
 function normalize(p) {
-  const len = Math.sqrt(p.x * p.x + p.y * p.y); //  + p.z * p.z
-  return { x: p.x / len, y: p.y / len, z: p.z / len };
+  const len = Math.sqrt(p.x * p.x + p.y * p.y);
+  return { x: p.x / len, y: p.y / len };
 }
 
 function calculateTriangleArea(p0, p1, p2) {
@@ -355,4 +482,5 @@ function reverseBilinearInterpolate(x, y, p1, p2, p3, p4, tol = 1e-6, maxIter = 
   throw new Error("Maximum iterations exceeded, the method did not converge.");
 }
 
+initTrack();
 setInterval(draw, 1000 / 60);
