@@ -31,14 +31,14 @@ const TrackNode = struct {
 var track: std.ArrayList(TrackNode) = undefined;
 
 const track_data = [_]TrackNode{
-    .{ .pos = Vec3.init(-44.40104675292969, 1.721134901046753, -1.3928852081298828), .left_handle = Vec3.init(0.09521102905273438, 0.0, -12.897957801818848), .right_handle = Vec3.init(-0.08200836181640625, 0.0, 11.109437942504883), .tilt = 0.4923742711544037 },
-    .{ .pos = Vec3.init(-22.16115951538086, 0.0, 25.05327796936035), .left_handle = Vec3.init(-10.459827423095703, 0.0, -0.12156295776367188), .right_handle = Vec3.init(11.108991622924805, 0.0, 0.1291065216064453), .tilt = 0.0 },
-    .{ .pos = Vec3.init(-0.13704636693000793, 0.0, 18.279998779296875), .left_handle = Vec3.init(-9.759026527404785, 0.0, 0.015380859375), .right_handle = Vec3.init(10.364692687988281, 0.0, -0.01633453369140625), .tilt = 0.0 },
-    .{ .pos = Vec3.init(25.252986907958984, 0.0, 25.312191009521484), .left_handle = Vec3.init(-10.450516700744629, 0.0, -0.17721176147460938), .right_handle = Vec3.init(10.576545715332031, 0.0, 0.17934799194335938), .tilt = 0.0 },
-    .{ .pos = Vec3.init(39.60963821411133, 1.8524237871170044, -1.0046038627624512), .left_handle = Vec3.init(0.18136978149414062, 0.0, 8.81155776977539), .right_handle = Vec3.init(-0.21197891235351562, 0.0, -10.298568725585938), .tilt = 0.7031676769256592 },
-    .{ .pos = Vec3.init(21.150728225708008, 0.0, -22.470476150512695), .left_handle = Vec3.init(9.56886100769043, 0.0, 0.0577392578125), .right_handle = Vec3.init(-10.55300235748291, 0.0, -0.06367683410644531), .tilt = 0.0 },
-    .{ .pos = Vec3.init(-0.24440056085586548, 4.444904804229736, -22.27613067626953), .left_handle = Vec3.init(7.496023178100586, 0.0, -0.1460742950439453), .right_handle = Vec3.init(-8.729326248168945, 0.0, 0.1701068878173828), .tilt = 0.0 },
-    .{ .pos = Vec3.init(-24.074430465698242, 0.0, -21.877046585083008), .left_handle = Vec3.init(11.414963722229004, 0.0, -0.07281494140625), .right_handle = Vec3.init(-14.097784042358398, 0.0, 0.08992767333984375), .tilt = 0.0 },
+    .{ .pos = Vec3.init(-44.401, -1.393, 1.721), .left_handle = Vec3.init(0.095, -12.898, 0.000), .right_handle = Vec3.init(-0.082, 11.109, 0.000), .tilt = 0.49 },
+    .{ .pos = Vec3.init(-22.161, 25.053, 0.000), .left_handle = Vec3.init(-10.460, -0.122, 0.000), .right_handle = Vec3.init(11.109, 0.129, 0.000), .tilt = 0.00 },
+    .{ .pos = Vec3.init(-0.137, 18.280, 0.000), .left_handle = Vec3.init(-9.759, 0.015, 0.000), .right_handle = Vec3.init(10.365, -0.016, 0.000), .tilt = 0.00 },
+    .{ .pos = Vec3.init(25.253, 25.312, 0.000), .left_handle = Vec3.init(-10.451, -0.177, 0.000), .right_handle = Vec3.init(10.577, 0.179, 0.000), .tilt = 0.00 },
+    .{ .pos = Vec3.init(39.610, -1.005, 1.852), .left_handle = Vec3.init(0.181, 8.812, 0.000), .right_handle = Vec3.init(-0.212, -10.299, 0.000), .tilt = 0.70 },
+    .{ .pos = Vec3.init(21.151, -22.470, 0.000), .left_handle = Vec3.init(9.569, 0.058, 0.000), .right_handle = Vec3.init(-10.553, -0.064, 0.000), .tilt = 0.00 },
+    .{ .pos = Vec3.init(-0.244, -22.276, 4.445), .left_handle = Vec3.init(7.496, -0.146, 0.000), .right_handle = Vec3.init(-8.729, 0.170, 0.000), .tilt = 0.00 },
+    .{ .pos = Vec3.init(-24.074, -21.877, 0.000), .left_handle = Vec3.init(11.415, -0.073, 0.000), .right_handle = Vec3.init(-14.098, 0.090, 0.000), .tilt = 0.00 },
 };
 
 // fn addTrackPoint(point: Vec3) !void {
@@ -87,29 +87,29 @@ fn drawScene(camera: rl.Camera) void {
         gl.rlPushMatrix();
         defer gl.rlPopMatrix();
 
-        gl.rlTranslatef(0, -0.1, 0);
+        gl.rlTranslatef(0, 0, -0.1);
 
         gl.rlSetTexture(background_texture.id);
         gl.rlBegin(RL_QUADS);
         gl.rlColor4f(1, 1, 1, 0.2);
         gl.rlTexCoord2f(0, 0);
-        gl.rlVertex3f(-100, 0, -100);
+        gl.rlVertex2f(-100, -100);
         gl.rlTexCoord2f(0, 64);
-        gl.rlVertex3f(-100, 0, 100);
+        gl.rlVertex2f(-100, 100);
         gl.rlTexCoord2f(64, 64);
-        gl.rlVertex3f(100, 0, 100);
+        gl.rlVertex2f(100, 100);
         gl.rlTexCoord2f(64, 0);
-        gl.rlVertex3f(100, 0, -100);
+        gl.rlVertex2f(100, -100);
         gl.rlEnd();
         gl.rlSetTexture(0);
     }
 
     // mirror
     gl.rlSetCullFace(@intCast(@intFromEnum(gl.rlCullMode.rl_cull_face_front)));
-    rl.drawModelEx(model, car.center(), Vec3.init(0, 1, 0), car.angle(), Vec3.init(1, -1, 1), rl.Color.white);
+    rl.drawModelEx(model, car.center(), Vec3.init(0, 0, 1), car.angle(), Vec3.init(1, 1, -1), rl.Color.white);
     gl.rlSetCullFace(@intCast(@intFromEnum(gl.rlCullMode.rl_cull_face_back)));
 
-    rl.drawModelEx(model, car.center(), Vec3.init(0, 1, 0), car.angle(), Vec3.init(1, 1, 1), rl.Color.white);
+    rl.drawModelEx(model, car.center(), Vec3.init(0, 0, 1), car.angle(), Vec3.init(1, 1, 1), rl.Color.white);
 }
 
 pub fn main() !void {
@@ -130,14 +130,14 @@ pub fn main() !void {
     defer rl.closeAudioDevice();
 
     var camera = rl.Camera{
-        .position = rl.Vector3.init(0, 5, 10),
+        .position = rl.Vector3.init(0, -10, 5),
         .target = Vec3.zero(),
-        .up = rl.Vector3.init(0, 1, 0),
+        .up = rl.Vector3.init(0, 0, 1),
         .fovy = 45,
         .projection = .camera_perspective,
     };
     var camera_td = rl.Camera{
-        .position = rl.Vector3.init(0, 20, 0),
+        .position = rl.Vector3.init(0, 0, 20),
         .target = Vec3.zero(),
         .up = rl.Vector3.init(0, 1, 0),
         .fovy = 45,
@@ -217,11 +217,11 @@ pub fn main() !void {
 
         // project car onto track
         // TODO: need the surface normals for the orientation
-        {
-            const ray_front = rl.Ray{ .position = car.front.add(Vec3.init(0, 100, 0)), .direction = Vec3.init(0, -1, 0) };
+        if (false) {
+            const ray_front = rl.Ray{ .position = car.front.add(Vec3.init(0, 0, 100)), .direction = Vec3.init(0, 0, -1) };
             const result_front = getRayCollisionTrack(ray_front);
             if (result_front.hit) {
-                const ray_back = rl.Ray{ .position = car.back.add(Vec3.init(0, 100, 0)), .direction = Vec3.init(0, -1, 0) };
+                const ray_back = rl.Ray{ .position = car.back.add(Vec3.init(0, 0, 100)), .direction = Vec3.init(0, 0, -1) };
                 const result_back = getRayCollisionTrack(ray_back);
                 if (result_back.hit) {
                     car.front = result_front.point;
@@ -233,7 +233,7 @@ pub fn main() !void {
         // update car animation
         const anim = &model_animations[1];
         const wheel_rot = rlm.quaternionFromAxisAngle(Vec3.init(1, 0, 0), car.wheel_angle);
-        const wheel_turn = rlm.quaternionFromAxisAngle(Vec3.init(0, 1, 0), car.steering_angle);
+        const wheel_turn = rlm.quaternionFromAxisAngle(Vec3.init(0, 0, 1), car.steering_angle);
         anim.framePoses[0][1].rotation = wheel_turn;
         anim.framePoses[0][2].rotation = rlm.quaternionMultiply(wheel_turn, wheel_rot);
         anim.framePoses[0][3].rotation = wheel_turn;
@@ -242,11 +242,11 @@ pub fn main() !void {
         anim.framePoses[0][6].rotation = wheel_rot;
         rl.updateModelAnimation(model, model_animations[1], 0);
 
-        camera.target = car.center().add(Vec3.init(0, 1, 0));
-        const camera_position = camera.target.add(Vec3.init(0, 2, -6).rotateByAxisAngle(Vec3.init(0, 1, 0), std.math.degreesToRadians(car.angle())));
+        camera.target = car.center().add(Vec3.init(0, 0, 1));
+        const camera_position = camera.target.add(Vec3.init(0, 6, 2).rotateByAxisAngle(Vec3.init(0, 0, 1), std.math.degreesToRadians(car.angle())));
         camera.position = camera.position.lerp(camera_position, 0.1);
         camera_td.target = car.center();
-        camera_td.position = camera_td.target.add(Vec3.init(0, 100, 10));
+        camera_td.position = camera_td.target.add(Vec3.init(0, 0, 100));
 
         rl.beginDrawing();
         defer rl.endDrawing();
@@ -272,9 +272,6 @@ pub fn main() !void {
 
             rl.beginMode3D(if (use_camera_td) camera_td else camera);
             defer rl.endMode3D();
-
-            // gl.rlRotatef(90, 1, 0, 0);
-            // defer gl.rlLoadIdentity();
 
             for (track.items, 0..) |node, i| {
                 rl.drawSphere(node.pos, 0.5, rl.Color.red);
@@ -328,10 +325,14 @@ fn getRayCollisionTrackSegment(ray: rl.Ray, node1: TrackNode, node2: TrackNode) 
     for (0..SPLINE_SEGMENT_DIVISIONS) |i| {
         const p1 = points[2 * i + 0];
         const p2 = points[2 * i + 1];
-        const p3 = points[2 * i + 3];
-        const p4 = points[2 * i + 2];
-        const result = rl.getRayCollisionQuad(ray, p1, p2, p3, p4);
+        const p3 = points[2 * i + 2];
+        const p4 = points[2 * i + 3];
+        const result = rl.getRayCollisionQuad(ray, p1, p2, p4, p3); // p3 and p4 swapped because of triangle strips
         if (result.hit) {
+            // calculate correct Z height (not based on triangles)
+            // const c1 = p1.add(p2).scale(0.5);
+            // const c2 = p3.add(p4).scale(0.5);
+            // result.point.z = 100;
             return result;
         }
     }
@@ -340,7 +341,7 @@ fn getRayCollisionTrackSegment(ray: rl.Ray, node1: TrackNode, node2: TrackNode) 
     return neg_result;
 }
 
-const SPLINE_SEGMENT_DIVISIONS = 24;
+const SPLINE_SEGMENT_DIVISIONS = 4; //24;
 
 fn interpolateCubic(p1: Vec3, c2: Vec3, c3: Vec3, p4: Vec3, t: f32) Vec3 {
     const a = std.math.pow(f32, 1.0 - t, 3);
@@ -351,7 +352,7 @@ fn interpolateCubic(p1: Vec3, c2: Vec3, c3: Vec3, p4: Vec3, t: f32) Vec3 {
 }
 
 fn evaluateTrackSegment(node1: TrackNode, node2: TrackNode, thick: f32, points: *[2 * SPLINE_SEGMENT_DIVISIONS + 2]Vec3) void {
-    const y_up = Vec3.init(0, 1, 0);
+    const z_up = Vec3.init(0, 0, 1);
 
     const p1 = node1.pos;
     const c2 = node1.pos.add(node1.right_handle);
@@ -374,7 +375,7 @@ fn evaluateTrackSegment(node1: TrackNode, node2: TrackNode, thick: f32, points: 
 
         const ease_t = easeInOutQuad(t);
         const tilt = std.math.lerp(node1.tilt, node2.tilt, ease_t);
-        const side = y_up.rotateByAxisAngle(dir, 0.5 * std.math.pi - tilt);
+        const side = z_up.rotateByAxisAngle(dir, 0.5 * std.math.pi + tilt);
         points[2 * i + 0] = pos.add(side.scale(-0.5 * thick));
         points[2 * i + 1] = pos.add(side.scale(0.5 * thick));
     }

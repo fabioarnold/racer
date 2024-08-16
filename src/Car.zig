@@ -16,13 +16,13 @@ wheel_angle: f32 = 0,
 
 pub fn init(pos: Vec3) Car {
     return .{
-        .front = pos.add(Vec3.init(0, 0, dist_front)),
-        .back = pos.add(Vec3.init(0, 0, -dist_back)),
+        .front = pos.add(Vec3.init(0, dist_front, 0)),
+        .back = pos.add(Vec3.init(0, -dist_back, 0)),
     };
 }
 
 pub fn integrate(self: *Car, dt: f32) void {
-    const up = Vec3.init(0, 1, 0);
+    const up = Vec3.init(0, 0, 1);
     var dir = self.direction();
     const move_forward = dir.scale(self.speed).scale(dt);
     const steer = move_forward.rotateByAxisAngle(up, self.steering_angle);
@@ -46,5 +46,5 @@ pub fn direction(self: Car) Vec3 {
 
 pub fn angle(self: Car) f32 {
     const dir = self.direction();
-    return std.math.radiansToDegrees(std.math.atan2(dir.x, dir.z));
+    return std.math.radiansToDegrees(std.math.atan2(dir.x, -dir.y));
 }
