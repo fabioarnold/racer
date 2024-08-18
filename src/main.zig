@@ -359,18 +359,17 @@ fn evaluateTrackSegment(node1: TrackNode, node2: TrackNode, thick: f32, points: 
     const c3 = node2.pos.add(node2.left_handle);
     const p4 = node2.pos;
 
-    var prev_pos: Vec3 = undefined;
     for (0..SPLINE_SEGMENT_DIVISIONS + 1) |i| {
         const t: f32 = @as(f32, @floatFromInt(i)) / SPLINE_SEGMENT_DIVISIONS;
         const pos = interpolateCubic(p1, c2, c3, p4, t);
-        defer prev_pos = pos;
         var dir: Vec3 = undefined;
         if (i == 0) {
             dir = node1.right_handle.normalize();
         } else if (i == SPLINE_SEGMENT_DIVISIONS) {
             dir = node2.right_handle.normalize();
         } else {
-            dir = pos.subtract(prev_pos).normalize();
+            const next_pos = interpolateCubic(p1, c2, c3, p4, t + 0.01);
+            dir = next_pos.subtract(pos).normalize();
         }
 
         const ease_t = easeInOutQuad(t);

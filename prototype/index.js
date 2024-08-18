@@ -337,7 +337,7 @@ function evaluateTrackSegment(node1, node2, thick) {
     } else if (i === SPLINE_SEGMENT_DIVISIONS) {
       dir = normalize(node2.right_handle);
     } else {
-      const next_pos = interpolateCubic(p1, c2, c3, p4, i / SPLINE_SEGMENT_DIVISIONS + 0.01);
+      const next_pos = interpolateCubic(p1, c2, c3, p4, t + 0.01);
       dir = normalize(subtract(next_pos, pos));
     }
 
