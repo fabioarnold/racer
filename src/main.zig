@@ -28,7 +28,6 @@ const TrackNode = struct {
     right_handle: Vec3,
     tilt: f32 = 0,
 };
-var track: std.ArrayList(TrackNode) = undefined;
 
 const track_data = [_]TrackNode{
     .{ .pos = Vec3.init(-44.401, -1.393, 1.721), .left_handle = Vec3.init(0.095, -12.898, 0.000), .right_handle = Vec3.init(-0.082, 11.109, 0.000), .tilt = 0.49 },
@@ -41,16 +40,33 @@ const track_data = [_]TrackNode{
     .{ .pos = Vec3.init(-24.074, -21.877, 0.000), .left_handle = Vec3.init(11.415, -0.073, 0.000), .right_handle = Vec3.init(-14.098, 0.090, 0.000), .tilt = 0.00 },
 };
 
-// fn addTrackPoint(point: Vec3) !void {
-//     if (track.items.len > 0) {
-//         const node = &track.items[track.items.len - 1];
-//         if (node.dir.equals(Vec3.zero()) != 0) {
-//             node.dir = point.subtract(node.pos);
-//             return;
-//         }
-//     }
-//     try track.append(.{ .pos = point, .dir = Vec3.zero() });
-// }
+const SPLINE_SEGMENT_DIVISIONS = 4; //24;
+
+const TrackSegment = struct {
+    quads: [SPLINE_SEGMENT_DIVISIONS][4]Vec3,
+};
+
+const Track = struct {
+    segments: std.ArrayList(TrackSegment),
+};
+
+var track: Track = undefined;
+fn initTrack(allocator: std.mem.Allocator) !void {
+    track.segments = std.ArrayList(TrackSegment).init(allocator);
+    for (track_data, 0..) |node1, n| {
+        const node2 = track_data[(n + 1) % track_data.len];
+        var points: [2 * SPLINE_SEGMENT_DIVISIONS + 2]Vec3 = undefined;
+        evaluateTrackSegment(node1, node2, 10, &points);
+        var segment: TrackSegment = undefined;
+        for (&segment.quads, 0..) |*q, i| {
+            q[0] = points[2 * i + 0];
+            q[1] = points[2 * i + 1];
+            q[2] = points[2 * i + 3];
+            q[3] = points[2 * i + 2];
+        }
+        try track.segments.append(segment);
+    }
+}
 
 const node_inspector_bounds = rl.Rectangle{ .x = 10, .y = 10, .width = 200, .height = 400 };
 const TrackNodeInspector = struct {
@@ -145,20 +161,12 @@ pub fn main() !void {
     };
     var use_camera_td = true;
 
-    track = std.ArrayList(TrackNode).init(allocator);
-    try track.appendSlice(&track_data);
+    try initTrack(allocator);
     model = rl.loadModel("data/mazda_rx7.glb");
     var model_animations = try rl.loadModelAnimations("data/mazda_rx7.glb");
-    for (model_animations[0].bones[0..@intCast(model_animations[0].boneCount)], 0..) |b, i| {
-        std.debug.print("b {} {s}\n", .{ i, b.name });
-    }
-    // b 0 body
-    // b 1 steer_fr
-    // b 2 wheel_fr
-    // b 3 steer_fl
-    // b 4 wheel_fl
-    // b 5 wheel_br
-    // b 6 wheel_bl
+    // for (model_animations[0].bones[0..@intCast(model_animations[0].boneCount)], 0..) |b, i| {
+    //     std.debug.print("b {} {s}\n", .{ i, b.name });
+    // }
     const sfx_click = rl.loadSound("data/sfx/click.wav");
     Menu.load();
 
@@ -188,11 +196,6 @@ pub fn main() !void {
             point_on_track = result.point;
         }
 
-        // if (rl.isMouseButtonPressed(.mouse_button_left) and !gui_hover) {
-        //     const t = -ray.position.y / ray.direction.y;
-        //     const point = ray.position.add(ray.direction.scale(t));
-        //     try addTrackPoint(point);
-        // }
         if (rl.isKeyPressed(.key_tab)) {
             use_camera_td = !use_camera_td;
         }
@@ -273,11 +276,11 @@ pub fn main() !void {
             rl.beginMode3D(if (use_camera_td) camera_td else camera);
             defer rl.endMode3D();
 
-            for (track.items, 0..) |node, i| {
+            for (track_data, 0..) |node, i| {
                 rl.drawSphere(node.pos, 0.5, rl.Color.red);
                 rl.drawSphere(node.pos.add(node.left_handle), 0.5, rl.Color.blue);
                 rl.drawSphere(node.pos.add(node.right_handle), 0.5, rl.Color.blue);
-                const next_node = track.items[(i + 1) % track.items.len];
+                const next_node = track_data[(i + 1) % track_data.len];
                 drawTrackSegment(node, next_node, 10, rl.Color.red.alpha(0.5));
             }
 
@@ -306,8 +309,8 @@ pub fn main() !void {
 }
 
 fn getRayCollisionTrack(ray: rl.Ray) rl.RayCollision {
-    for (track.items, 0..) |node, i| {
-        const next_node = track.items[(i + 1) % track.items.len];
+    for (track_data, 0..) |node, i| {
+        const next_node = track_data[(i + 1) % track_data.len];
         const result = getRayCollisionTrackSegment(ray, node, next_node);
         if (result.hit) {
             return result;
@@ -340,8 +343,6 @@ fn getRayCollisionTrackSegment(ray: rl.Ray, node1: TrackNode, node2: TrackNode) 
     neg_result.hit = false;
     return neg_result;
 }
-
-const SPLINE_SEGMENT_DIVISIONS = 4; //24;
 
 fn interpolateCubic(p1: Vec3, c2: Vec3, c3: Vec3, p4: Vec3, t: f32) Vec3 {
     const a = std.math.pow(f32, 1.0 - t, 3);
