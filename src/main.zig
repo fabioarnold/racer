@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const gl = rl.gl;
 const rlm = rl.math;
 const gui = @import("raygui");
+const Vec2 = rl.Vector2;
 const Vec3 = rl.Vector3;
 const Car = @import("Car.zig");
 const Menu = @import("Menu.zig");
@@ -70,14 +71,14 @@ const Track = struct {
         }
     }
 };
-
 var track: Track = undefined;
 
 const Player = struct {
     position: Vec3,
     track_pos: Track.Position,
+    angle: f32,
+    speed: f32,
 };
-
 var player: Player = undefined;
 
 const node_inspector_bounds = rl.Rectangle{ .x = 10, .y = 10, .width = 200, .height = 400 };
@@ -168,14 +169,16 @@ pub fn main() !void {
         .position = rl.Vector3.init(0, 0, 20),
         .target = Vec3.zero(),
         .up = rl.Vector3.init(0, 1, 0),
-        .fovy = 45,
-        .projection = .camera_perspective,
+        .fovy = 80,
+        .projection = .camera_orthographic,
     };
     var use_camera_td = true;
 
     try track.initFromData(allocator);
     player.position = sampleQuad(track.segments.items[0].quads[0], 0.5, 0.5);
     player.track_pos = .{ .segment = 0, .quad = 0 };
+    player.angle = 0;
+    player.speed = 4;
 
     model = rl.loadModel("data/mazda_rx7.glb");
     var model_animations = try rl.loadModelAnimations("data/mazda_rx7.glb");
@@ -231,7 +234,11 @@ pub fn main() !void {
 
         const max_steering_angle = 0.4 * (1 - @abs(car.speed) / 80.0);
         car.steering_angle = -max_steering_angle * steer;
-        car.integrate(1.0 / 60.0);
+        // car.integrate(1.0 / 60.0);
+
+        player.angle += -0.04 * steer;
+        const player_dir = Vec3.init(@cos(player.angle), @sin(player.angle), 0).scale(player.speed);
+        playerSlideMove(player_dir.scale(1.0 / 60.0));
 
         // project car onto track
         // TODO: need the surface normals for the orientation
@@ -333,6 +340,28 @@ pub fn main() !void {
         const alpha: f32 = @max(0, @min(1, 1 * (time - menu_time)));
         Menu.draw(alpha);
     }
+}
+
+fn playerSnapToQuad(quad: [4]Vec3) void {
+    for (0..4) |i| {
+        const q0 = quad[i];
+        const q1 = quad[(i + 1) % 4];
+        const normal = Vec3.init(q0.y - q1.y, q1.x - q0.x, 0).normalize();
+        const d = player.position.subtract(q0);
+        const dot = d.x * normal.x + d.y * normal.y;
+        if (dot < 0.01) {
+            player.position = player.position.add(normal.scale(-dot + 0.01));
+        }
+    }
+}
+
+fn playerSlideMove(move: Vec3) void {
+    const segment = track.segments.items[player.track_pos.segment];
+    const quad = segment.quads[player.track_pos.quad];
+
+    playerSnapToQuad(quad);
+
+    player.position = player.position.add(move);
 }
 
 fn getRayCollisionTrack(ray: rl.Ray) rl.RayCollision {
