@@ -177,8 +177,8 @@ pub fn main() !void {
     try track.initFromData(allocator);
     player.position = sampleQuad(track.segments.items[0].quads[0], 0.5, 0.5);
     player.track_pos = .{ .segment = 0, .quad = 0 };
-    player.angle = 0;
-    player.speed = 4;
+    player.angle = 0.5 * std.math.pi;
+    player.speed = 10;
 
     model = rl.loadModel("data/mazda_rx7.glb");
     var model_animations = try rl.loadModelAnimations("data/mazda_rx7.glb");
@@ -355,13 +355,109 @@ fn playerSnapToQuad(quad: [4]Vec3) void {
     }
 }
 
-fn playerSlideMove(move: Vec3) void {
+fn playerSlideMove(_move: Vec3) void {
+    var move = _move;
     const segment = track.segments.items[player.track_pos.segment];
     const quad = segment.quads[player.track_pos.quad];
 
     playerSnapToQuad(quad);
 
-    player.position = player.position.add(move);
+    var move_forward = false; // are we moving to the next or previous quad
+    var t: f32 = 1e6;
+    if (intersectRayLineXY(player.position, move, quad[2], quad[3])) |t_forward| {
+        move_forward = true;
+        t = t_forward;
+    } else if (intersectRayLineXY(player.position, move, quad[0], quad[1])) |t_back| {
+        move_forward = false;
+        t = t_back;
+    }
+
+    if (intersectRayLineXY(player.position, move, quad[3], quad[0])) |t_left| {
+        if (t_left < t) {
+            t = t_left;
+            const step = move.scale(@min(1, t));
+            player.position = player.position.add(step);
+            if (t < 1) {
+                move = move.subtract(step);
+
+                // clip move by normal
+                var normal = quad[0].subtract(quad[3]);
+                normal = Vec3.init(normal.y, -normal.x, 0).normalize();
+                const dot = normal.x * move.x + normal.y * move.y;
+                move = move.subtract(normal.scale(dot));
+                playerSlideMove(move);
+            }
+            return;
+        }
+    }
+
+    if (intersectRayLineXY(player.position, move, quad[1], quad[2])) |t_right| {
+        if (t_right < t) {
+            t = t_right;
+            const step = move.scale(@min(1, t));
+            player.position = player.position.add(step);
+            if (t < 1) {
+                move = move.subtract(step);
+
+                // clip move by normal
+                var normal = quad[2].subtract(quad[1]);
+                normal = Vec3.init(normal.y, -normal.x, 0).normalize();
+                const dot = normal.x * move.x + normal.y * move.y;
+                move = move.subtract(normal.scale(dot));
+                playerSlideMove(move);
+            }
+            return;
+        }
+    }
+
+    const step = move.scale(@min(1, t));
+    player.position = player.position.add(step);
+
+    if (t < 1) {
+        // go to next/previous quad
+        if (move_forward) {
+            player.track_pos.quad += 1;
+            if (player.track_pos.quad == segment.quads.len) {
+                player.track_pos.quad = 0;
+                player.track_pos.segment += 1;
+                if (player.track_pos.segment == track.segments.items.len) {
+                    player.track_pos.segment = 0;
+                }
+            }
+        } else {
+            if (player.track_pos.quad == 0) {
+                player.track_pos.quad = segment.quads.len - 1;
+                if (player.track_pos.segment == 0) {
+                    player.track_pos.segment = track.segments.items.len - 1;
+                } else {
+                    player.track_pos.segment -= 1;
+                }
+            } else {
+                player.track_pos.quad -= 1;
+            }
+        }
+
+        move = move.subtract(step);
+        playerSlideMove(move);
+    }
+}
+
+fn intersectRayLineXY(ro: Vec3, rd: Vec3, l1: Vec3, l2: Vec3) ?f32 {
+    const v1 = l1.subtract(ro);
+    const v2 = l2.subtract(l1);
+
+    const denom = rd.x * v2.y - rd.y * v2.x;
+
+    if (@abs(denom) < 0.0001) {
+        return null; // parallel
+    }
+
+    const t = (v1.x * v2.y - v1.y * v2.x) / denom;
+    if (t < 0.0001) {
+        return null; // behind
+    }
+
+    return t;
 }
 
 fn getRayCollisionTrack(ray: rl.Ray) rl.RayCollision {
