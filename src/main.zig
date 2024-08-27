@@ -267,10 +267,12 @@ pub fn main() !void {
         anim.framePoses[0][6].rotation = wheel_rot;
         rl.updateModelAnimation(model, model_animations[1], 0);
 
-        camera.target = car.center().add(Vec3.init(0, 0, 1));
-        const camera_position = camera.target.add(Vec3.init(0, 6, 2).rotateByAxisAngle(Vec3.init(0, 0, 1), std.math.degreesToRadians(car.angle())));
+        const camera_target = if (true) player.position else car.center();
+        const camera_angle = if (true) player.angle + 0.5 * std.math.pi else std.math.degreesToRadians(car.angle());
+        camera.target = camera_target.add(Vec3.init(0, 0, 1));
+        const camera_position = camera.target.add(Vec3.init(0, 6, 2).rotateByAxisAngle(Vec3.init(0, 0, 1), camera_angle));
         camera.position = camera.position.lerp(camera_position, 0.1);
-        camera_td.target = car.center();
+        camera_td.target = camera_target;
         camera_td.position = camera_td.target.add(Vec3.init(0, 0, 100));
 
         rl.beginDrawing();
@@ -316,6 +318,7 @@ pub fn main() !void {
             }
 
             rl.drawSphere(player.position, 0.5, rl.Color.yellow);
+            rl.drawLine3D(player.position, player.position.add(player_dir), rl.Color.yellow);
             {
                 const quad = track.segments.items[player.track_pos.segment].quads[player.track_pos.quad];
                 rl.drawTriangle3D(quad[0], quad[1], quad[2], rl.Color.blue.alpha(0.5));
