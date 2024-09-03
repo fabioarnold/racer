@@ -44,7 +44,7 @@ const Track = struct {
 
     const Segment = struct {
         const divisions = 4; //24;
-        quads: [divisions][4]Vec3,
+        quads: [divisions][4]Vec3, // CCW order
     };
 
     const Position = struct {
@@ -175,7 +175,7 @@ pub fn main() !void {
     var use_camera_td = true;
 
     try track.initFromData(allocator);
-    player.position = sampleQuad(track.segments.items[0].quads[0], 0.5, 0.5);
+    player.position = sampleQuad(track.segments.items[0].quads[0], 0.25, 0.25);
     player.track_pos = .{ .segment = 0, .quad = 0 };
     player.angle = 0.5 * std.math.pi;
     player.speed = 10;
@@ -256,16 +256,18 @@ pub fn main() !void {
         }
 
         // update car animation
-        const anim = &model_animations[1];
-        const wheel_rot = rlm.quaternionFromAxisAngle(Vec3.init(1, 0, 0), car.wheel_angle);
-        const wheel_turn = rlm.quaternionFromAxisAngle(Vec3.init(0, 0, 1), car.steering_angle);
-        anim.framePoses[0][1].rotation = wheel_turn;
-        anim.framePoses[0][2].rotation = rlm.quaternionMultiply(wheel_turn, wheel_rot);
-        anim.framePoses[0][3].rotation = wheel_turn;
-        anim.framePoses[0][4].rotation = rlm.quaternionMultiply(wheel_turn, wheel_rot);
-        anim.framePoses[0][5].rotation = wheel_rot;
-        anim.framePoses[0][6].rotation = wheel_rot;
-        rl.updateModelAnimation(model, model_animations[1], 0);
+        {
+            const anim = &model_animations[1];
+            const wheel_rot = rlm.quaternionFromAxisAngle(Vec3.init(1, 0, 0), car.wheel_angle);
+            const wheel_turn = rlm.quaternionFromAxisAngle(Vec3.init(0, 0, 1), car.steering_angle);
+            anim.framePoses[0][1].rotation = wheel_turn;
+            anim.framePoses[0][2].rotation = rlm.quaternionMultiply(wheel_turn, wheel_rot);
+            anim.framePoses[0][3].rotation = wheel_turn;
+            anim.framePoses[0][4].rotation = rlm.quaternionMultiply(wheel_turn, wheel_rot);
+            anim.framePoses[0][5].rotation = wheel_rot;
+            anim.framePoses[0][6].rotation = wheel_rot;
+            rl.updateModelAnimation(model, model_animations[1], 0);
+        }
 
         const camera_target = if (true) player.position else car.center();
         const camera_angle = if (true) player.angle + 0.5 * std.math.pi else std.math.degreesToRadians(car.angle());
@@ -317,7 +319,7 @@ pub fn main() !void {
                 rl.drawSphere(point, 0.5, rl.Color.green);
             }
 
-            rl.drawSphere(player.position, 0.5, rl.Color.yellow);
+            rl.drawSphere(player.position, 0.2, rl.Color.yellow);
             rl.drawLine3D(player.position, player.position.add(player_dir), rl.Color.yellow);
             {
                 const quad = track.segments.items[player.track_pos.segment].quads[player.track_pos.quad];
@@ -358,12 +360,22 @@ fn playerSnapToQuad(quad: [4]Vec3) void {
     }
 }
 
+fn bilinearInterpolate(quad: [4]Vec3, uv: [2]f32) Vec3 {
+    return Vec3.lerp(
+        Vec3.lerp(quad[0], quad[1], uv[0]),
+        Vec3.lerp(quad[2], quad[3], uv[0]),
+        uv[1],
+    );
+}
+
 fn playerSlideMove(_move: Vec3) void {
     var move = _move;
     const segment = track.segments.items[player.track_pos.segment];
     const quad = segment.quads[player.track_pos.quad];
 
     playerSnapToQuad(quad);
+    const uv = reverseBilinearInterpolate(player.position.x, player.position.y, quad) catch .{ 0.5, 0.5 };
+    player.position = sampleQuad(quad, uv[0], uv[1]);
 
     var move_forward = false; // are we moving to the next or previous quad
     var t: f32 = 1e6;
@@ -501,7 +513,7 @@ fn getRayCollisionTrackSegment(ray: rl.Ray, node1: Track.Node, node2: Track.Node
 
 fn sampleQuad(quad: [4]Vec3, u: f32, v: f32) Vec3 {
     const v01 = Vec3.lerp(quad[0], quad[1], u);
-    const v23 = Vec3.lerp(quad[2], quad[3], u);
+    const v23 = Vec3.lerp(quad[3], quad[2], u);
     return Vec3.lerp(v01, v23, v);
 }
 
@@ -570,4 +582,67 @@ fn calcTrackSegmentLength(node1: Track.Node, node2: Track.Node) f32 {
 
 fn easeInOutQuad(t: f32) f32 {
     return if (t < 0.5) 2 * t * t else 1 - 2 * (1 - t) * (1 - t);
+}
+
+fn reverseBilinearInterpolate(x: f32, y: f32, q: [4]Vec3) ![2]f32 {
+    const tolerance = 1e-3;
+    // Vertices of the quadrilateral
+    const x1 = q[0].x;
+    const y1 = q[0].y;
+    const x2 = q[1].x;
+    const y2 = q[1].y;
+    const x3 = q[2].x;
+    const y3 = q[2].y;
+    const x4 = q[3].x;
+    const y4 = q[3].y;
+
+    // Initial guess for (u, v)
+    var u: f32 = 0.5;
+    var v: f32 = 0.5;
+
+    // Iterative method
+    const max_iter = 100;
+    var iter: usize = 0;
+    while (iter < max_iter) : (iter += 1) {
+        // Calculate x(u, v) and y(u, v)
+        const xu = (1 - u) * (1 - v) * x1 + u * (1 - v) * x2 + u * v * x3 + (1 - u) * v * x4;
+        const yv = (1 - u) * (1 - v) * y1 + u * (1 - v) * y2 + u * v * y3 + (1 - u) * v * y4;
+
+        // Calculate the difference
+        const dx = xu - x;
+        const dy = yv - y;
+
+        // Check if the difference is within the tolerance
+        if (@abs(dx) < tolerance and @abs(dy) < tolerance) {
+            return .{ u, v };
+        }
+
+        // Calculate partial derivatives
+        const dxdu = (1 - v) * (x2 - x1) + v * (x3 - x4);
+        const dxdv = (1 - u) * (x4 - x1) + u * (x3 - x2);
+        const dydu = (1 - v) * (y2 - y1) + v * (y3 - y4);
+        const dydv = (1 - u) * (y4 - y1) + u * (y3 - y2);
+
+        // Jacobian matrix determinant
+        const detJ = dxdu * dydv - dxdv * dydu;
+
+        if (@abs(detJ) < tolerance) {
+            // Jacobian determinant is too small, the method may not converge.
+            return error.JacobianDeterminantTooSmall;
+        }
+
+        // Newton-Raphson step
+        const du = (dydv * dx - dxdv * dy) / detJ;
+        const dv = (dxdu * dy - dydu * dx) / detJ;
+
+        u -= du;
+        v -= dv;
+
+        // Clamp u and v to [0, 1] to stay within bounds
+        u = @min(@max(u, 0), 1);
+        v = @min(@max(v, 0), 1);
+    }
+
+    // Maximum iterations exceeded, the method did not converge.
+    return error.MaximumIterationsExceeded;
 }
