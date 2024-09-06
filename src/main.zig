@@ -34,6 +34,23 @@ const track_data = [_]Track.Node{
     .{ .pos = Vec3.init(-24.074, -21.877, 0.000), .left_handle = Vec3.init(11.415, -0.073, 0.000), .right_handle = Vec3.init(-14.098, 0.090, 0.000), .tilt = 0.00 },
 };
 
+const Quad = struct {
+    positions: [4]Vec3,
+    normals: [4]Vec3,
+
+    fn samplePosition(quad: Quad, u: f32, v: f32) Vec3 {
+        const v01 = Vec3.lerp(quad.positions[0], quad.positions[1], u);
+        const v23 = Vec3.lerp(quad.positions[3], quad.positions[2], u);
+        return Vec3.lerp(v01, v23, v);
+    }
+
+    fn sampleNormal(quad: Quad, u: f32, v: f32) Vec3 {
+        const v01 = Vec3.lerp(quad.normals[0], quad.normals[1], u);
+        const v23 = Vec3.lerp(quad.normals[3], quad.normals[2], u);
+        return Vec3.lerp(v01, v23, v);
+    }
+};
+
 const Track = struct {
     const Node = struct {
         pos: Vec3,
@@ -44,7 +61,7 @@ const Track = struct {
 
     const Segment = struct {
         const divisions = 4; //24;
-        quads: [divisions][4]Vec3, // CCW order
+        quads: [divisions]Quad, // CCW order
     };
 
     const Position = struct {
@@ -63,10 +80,14 @@ const Track = struct {
             evaluateTrackSegment(node1, node2, 10, &points, &normals);
             var segment: Segment = undefined;
             for (&segment.quads, 0..) |*q, i| {
-                q[0] = points[2 * i + 0];
-                q[1] = points[2 * i + 1];
-                q[2] = points[2 * i + 3];
-                q[3] = points[2 * i + 2];
+                q.positions[0] = points[2 * i + 0];
+                q.positions[1] = points[2 * i + 1];
+                q.positions[2] = points[2 * i + 3];
+                q.positions[3] = points[2 * i + 2];
+                q.normals[0] = normals[i + 0];
+                q.normals[1] = normals[i + 0];
+                q.normals[2] = normals[i + 1];
+                q.normals[3] = normals[i + 1];
             }
             try self.segments.append(segment);
         }
@@ -76,6 +97,7 @@ var track: Track = undefined;
 
 const Player = struct {
     position: Vec3,
+    normal: Vec3,
     track_pos: Track.Position,
     angle: f32,
     speed: f32,
@@ -176,7 +198,7 @@ pub fn main() !void {
     var use_camera_td = true;
 
     try track.initFromData(allocator);
-    player.position = sampleQuad(track.segments.items[0].quads[0], 0.25, 0.25);
+    player.position = track.segments.items[0].quads[0].samplePosition(0.5, 0.5);
     player.track_pos = .{ .segment = 0, .quad = 0 };
     player.angle = 0.5 * std.math.pi;
     player.speed = 10;
@@ -232,14 +254,16 @@ pub fn main() !void {
         if (rl.isKeyDown(.key_up)) car.speed += 0.2;
         if (rl.isKeyDown(.key_down)) car.speed -= 0.2;
         car.speed = std.math.clamp(car.speed, -max_reverse_speed, max_forward_speed);
+        player.speed = car.speed;
 
         const max_steering_angle = 0.4 * (1 - @abs(car.speed) / 80.0);
         car.steering_angle = -max_steering_angle * steer;
         // car.integrate(1.0 / 60.0);
 
         player.angle += -0.04 * steer;
-        const player_dir = Vec3.init(@cos(player.angle), @sin(player.angle), 0).scale(player.speed);
-        playerSlideMove(player_dir.scale(1.0 / 60.0));
+        const player_dir = Vec3.init(@cos(player.angle), @sin(player.angle), 0);
+        const player_move = player_dir.scale(player.speed);
+        playerSlideMove(player_move.scale(1.0 / 60.0));
 
         // project car onto track
         // TODO: need the surface normals for the orientation
@@ -312,6 +336,7 @@ pub fn main() !void {
             }
         }
 
+        // debug player visualization
         {
             rl.beginMode3D(if (use_camera_td) camera_td else camera);
             defer rl.endMode3D();
@@ -322,10 +347,11 @@ pub fn main() !void {
 
             rl.drawSphere(player.position, 0.2, rl.Color.yellow);
             rl.drawLine3D(player.position, player.position.add(player_dir), rl.Color.yellow);
+            rl.drawLine3D(player.position, player.position.add(player.normal), rl.Color.yellow);
             {
                 const quad = track.segments.items[player.track_pos.segment].quads[player.track_pos.quad];
-                rl.drawTriangle3D(quad[0], quad[1], quad[2], rl.Color.blue.alpha(0.5));
-                rl.drawTriangle3D(quad[0], quad[2], quad[3], rl.Color.blue.alpha(0.5));
+                rl.drawTriangle3D(quad.positions[0], quad.positions[1], quad.positions[2], rl.Color.blue.alpha(0.5));
+                rl.drawTriangle3D(quad.positions[0], quad.positions[2], quad.positions[3], rl.Color.blue.alpha(0.5));
             }
         }
 
@@ -348,10 +374,10 @@ pub fn main() !void {
     }
 }
 
-fn playerSnapToQuad(quad: [4]Vec3) void {
+fn playerSnapToQuad(quad: Quad) void {
     for (0..4) |i| {
-        const q0 = quad[i];
-        const q1 = quad[(i + 1) % 4];
+        const q0 = quad.positions[i];
+        const q1 = quad.positions[(i + 1) % 4];
         const normal = Vec3.init(q0.y - q1.y, q1.x - q0.x, 0).normalize();
         const d = player.position.subtract(q0);
         const dot = d.x * normal.x + d.y * normal.y;
@@ -361,34 +387,28 @@ fn playerSnapToQuad(quad: [4]Vec3) void {
     }
 }
 
-fn bilinearInterpolate(quad: [4]Vec3, uv: [2]f32) Vec3 {
-    return Vec3.lerp(
-        Vec3.lerp(quad[0], quad[1], uv[0]),
-        Vec3.lerp(quad[2], quad[3], uv[0]),
-        uv[1],
-    );
-}
-
 fn playerSlideMove(_move: Vec3) void {
     var move = _move;
     const segment = track.segments.items[player.track_pos.segment];
     const quad = segment.quads[player.track_pos.quad];
+    const qp = quad.positions;
 
     playerSnapToQuad(quad);
-    const uv = reverseBilinearInterpolate(player.position.x, player.position.y, quad) catch .{ 0.5, 0.5 };
-    player.position = sampleQuad(quad, uv[0], uv[1]);
+    const uv = reverseBilinearInterpolate(player.position.x, player.position.y, qp) catch .{ 0.5, 0.5 };
+    player.position = quad.samplePosition(uv[0], uv[1]);
+    player.normal = quad.sampleNormal(uv[0], uv[1]);
 
     var move_forward = false; // are we moving to the next or previous quad
     var t: f32 = 1e6;
-    if (intersectRayLineXY(player.position, move, quad[2], quad[3])) |t_forward| {
+    if (intersectRayLineXY(player.position, move, qp[2], qp[3])) |t_forward| {
         move_forward = true;
         t = t_forward;
-    } else if (intersectRayLineXY(player.position, move, quad[0], quad[1])) |t_back| {
+    } else if (intersectRayLineXY(player.position, move, qp[0], qp[1])) |t_back| {
         move_forward = false;
         t = t_back;
     }
 
-    if (intersectRayLineXY(player.position, move, quad[3], quad[0])) |t_left| {
+    if (intersectRayLineXY(player.position, move, qp[3], qp[0])) |t_left| {
         if (t_left < t) {
             t = t_left;
             const step = move.scale(@min(1, t));
@@ -397,7 +417,7 @@ fn playerSlideMove(_move: Vec3) void {
                 move = move.subtract(step);
 
                 // clip move by normal
-                var normal = quad[0].subtract(quad[3]);
+                var normal = qp[0].subtract(qp[3]);
                 normal = Vec3.init(normal.y, -normal.x, 0).normalize();
                 const dot = normal.x * move.x + normal.y * move.y;
                 move = move.subtract(normal.scale(dot));
@@ -407,7 +427,7 @@ fn playerSlideMove(_move: Vec3) void {
         }
     }
 
-    if (intersectRayLineXY(player.position, move, quad[1], quad[2])) |t_right| {
+    if (intersectRayLineXY(player.position, move, qp[1], qp[2])) |t_right| {
         if (t_right < t) {
             t = t_right;
             const step = move.scale(@min(1, t));
@@ -416,7 +436,7 @@ fn playerSlideMove(_move: Vec3) void {
                 move = move.subtract(step);
 
                 // clip move by normal
-                var normal = quad[2].subtract(quad[1]);
+                var normal = qp[2].subtract(qp[1]);
                 normal = Vec3.init(normal.y, -normal.x, 0).normalize();
                 const dot = normal.x * move.x + normal.y * move.y;
                 move = move.subtract(normal.scale(dot));
@@ -511,12 +531,6 @@ fn getRayCollisionTrackSegment(ray: rl.Ray, node1: Track.Node, node2: Track.Node
     var neg_result: rl.RayCollision = undefined;
     neg_result.hit = false;
     return neg_result;
-}
-
-fn sampleQuad(quad: [4]Vec3, u: f32, v: f32) Vec3 {
-    const v01 = Vec3.lerp(quad[0], quad[1], u);
-    const v23 = Vec3.lerp(quad[3], quad[2], u);
-    return Vec3.lerp(v01, v23, v);
 }
 
 fn interpolateCubic(p1: Vec3, c2: Vec3, c3: Vec3, p4: Vec3, t: f32) Vec3 {
