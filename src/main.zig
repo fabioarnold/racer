@@ -59,7 +59,8 @@ const Track = struct {
         for (track_data, 0..) |node1, n| {
             const node2 = track_data[(n + 1) % track_data.len];
             var points: [2 * Segment.divisions + 2]Vec3 = undefined;
-            evaluateTrackSegment(node1, node2, 10, &points);
+            var normals: [Segment.divisions + 1]Vec3 = undefined;
+            evaluateTrackSegment(node1, node2, 10, &points, &normals);
             var segment: Segment = undefined;
             for (&segment.quads, 0..) |*q, i| {
                 q[0] = points[2 * i + 0];
@@ -490,7 +491,8 @@ fn getRayCollisionTrack(ray: rl.Ray) rl.RayCollision {
 
 fn getRayCollisionTrackSegment(ray: rl.Ray, node1: Track.Node, node2: Track.Node) rl.RayCollision {
     var points: [2 * Track.Segment.divisions + 2]Vec3 = undefined;
-    evaluateTrackSegment(node1, node2, 10, &points);
+    var normals: [Track.Segment.divisions + 1]Vec3 = undefined;
+    evaluateTrackSegment(node1, node2, 10, &points, &normals);
 
     for (0..Track.Segment.divisions) |i| {
         const p1 = points[2 * i + 0];
@@ -525,7 +527,13 @@ fn interpolateCubic(p1: Vec3, c2: Vec3, c3: Vec3, p4: Vec3, t: f32) Vec3 {
     return p1.scale(a).add(c2.scale(b)).add(c3.scale(c)).add(p4.scale(d));
 }
 
-fn evaluateTrackSegment(node1: Track.Node, node2: Track.Node, thick: f32, points: *[2 * Track.Segment.divisions + 2]Vec3) void {
+fn evaluateTrackSegment(
+    node1: Track.Node,
+    node2: Track.Node,
+    thick: f32,
+    points: *[2 * Track.Segment.divisions + 2]Vec3,
+    normals: *[Track.Segment.divisions + 1]Vec3,
+) void {
     const z_up = Vec3.init(0, 0, 1);
 
     const p1 = node1.pos;
@@ -551,13 +559,22 @@ fn evaluateTrackSegment(node1: Track.Node, node2: Track.Node, thick: f32, points
         const side = z_up.rotateByAxisAngle(dir, 0.5 * std.math.pi + tilt);
         points[2 * i + 0] = pos.add(side.scale(-0.5 * thick));
         points[2 * i + 1] = pos.add(side.scale(0.5 * thick));
+        normals[i] = Vec3.crossProduct(side, dir);
     }
 }
 
 fn drawTrackSegment(node1: Track.Node, node2: Track.Node, thick: f32, color: rl.Color) void {
     var points: [2 * Track.Segment.divisions + 2]Vec3 = undefined;
-    evaluateTrackSegment(node1, node2, thick, &points);
+    var normals: [Track.Segment.divisions + 1]Vec3 = undefined;
+    evaluateTrackSegment(node1, node2, thick, &points, &normals);
     rl.drawTriangleStrip3D(&points, color);
+    const draw_normals = true;
+    if (draw_normals) {
+        for (normals, 0..) |normal, i| {
+            rl.drawLine3D(points[2 * i + 0], points[2 * i + 0].add(normal), rl.Color.yellow);
+            rl.drawLine3D(points[2 * i + 1], points[2 * i + 1].add(normal), rl.Color.yellow);
+        }
+    }
 }
 
 fn calcTrackSegmentLength(node1: Track.Node, node2: Track.Node) f32 {
