@@ -345,14 +345,48 @@ pub fn main() !void {
                 rl.drawSphere(point, 0.5, rl.Color.green);
             }
 
-            rl.drawSphere(player.position, 0.2, rl.Color.yellow);
-            rl.drawLine3D(player.position, player.position.add(player_dir), rl.Color.yellow);
-            rl.drawLine3D(player.position, player.position.add(player.normal), rl.Color.yellow);
             {
                 const quad = track.segments.items[player.track_pos.segment].quads[player.track_pos.quad];
                 rl.drawTriangle3D(quad.positions[0], quad.positions[1], quad.positions[2], rl.Color.blue.alpha(0.5));
                 rl.drawTriangle3D(quad.positions[0], quad.positions[2], quad.positions[3], rl.Color.blue.alpha(0.5));
             }
+
+            gl.rlPushMatrix();
+            defer gl.rlPopMatrix();
+            gl.rlTranslatef(player.position.x, player.position.y, player.position.z);
+
+            rl.drawSphere(Vec3.zero(), 0.2, rl.Color.yellow);
+            rl.drawLine3D(Vec3.zero(), player_dir, rl.Color.yellow);
+            rl.drawLine3D(Vec3.zero(), player.normal, rl.Color.yellow);
+
+            const z_axis = player.normal;
+            const x_axis = Vec3.crossProduct(player_dir, z_axis);
+            const y_axis = Vec3.crossProduct(z_axis, x_axis);
+
+            const orientation = rl.Matrix{
+                .m0 = x_axis.x,
+                .m4 = x_axis.y,
+                .m8 = x_axis.z,
+                .m12 = 0,
+                .m1 = y_axis.x,
+                .m5 = y_axis.y,
+                .m9 = y_axis.z,
+                .m13 = 0,
+                .m2 = z_axis.x,
+                .m6 = z_axis.y,
+                .m10 = z_axis.z,
+                .m14 = 0,
+                .m3 = player.position.x,
+                .m7 = player.position.y,
+                .m11 = player.position.z,
+                .m15 = 1,
+            };
+            gl.rlLoadIdentity();
+            gl.rlMultMatrixf(@as([*]const f32, @ptrCast(&orientation.m0))[0..16]);
+            rl.drawModelEx(model, car.center(), Vec3.init(0, 0, 1), 180, Vec3.init(1, 1, 1), rl.Color.white);
+
+            rl.drawLine3D(Vec3.zero(), x_axis, rl.Color.red);
+            rl.drawLine3D(Vec3.zero(), y_axis, rl.Color.green);
         }
 
         const show_gauges = false;
