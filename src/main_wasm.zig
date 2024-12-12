@@ -46,7 +46,7 @@ pub export fn onDraw() void {
     defer render_pass.release();
 
     render_pass.setPipeline(pipeline);
-    render_pass.draw(3, 1, 0, 0);
+    render_pass.draw(.{ .vertex_count = 3 });
     render_pass.end();
 
     const command_buffer = command_encoder.finish();

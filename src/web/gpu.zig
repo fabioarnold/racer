@@ -82,8 +82,14 @@ pub const RenderPass = struct {
         wgpu_encoder_set_pipeline(self.object, pipeline);
     }
 
-    pub fn draw(self: RenderPass, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
-        wgpu_render_commands_mixin_draw(self.object, vertex_count, instance_count, first_vertex, first_instance);
+    const DrawArgs = struct {
+        vertex_count: u32,
+        instance_count: u32 = 1,
+        first_vertex: u32 = 0,
+        first_instance: u32 = 0,
+    };
+    pub fn draw(self: RenderPass, args: DrawArgs) void {
+        wgpu_render_commands_mixin_draw(self.object, args.vertex_count, args.instance_count, args.first_vertex, args.first_instance);
     }
 
     pub fn end(self: RenderPass) void {
