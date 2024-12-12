@@ -1,18 +1,7 @@
 const std = @import("std");
 const wasm = @import("web/wasm.zig");
+const gpu = @import("web/gpu.zig");
 const log = std.log.scoped(.main_wasm);
-
-extern fn gpuCreateShaderModule(code_ptr: [*]const u8, code_len: usize) u32;
-extern fn gpuCreateRenderPipeline(module: u32) u32;
-extern fn gpuCreateRenderPassDescriptor() u32;
-extern fn gpuRenderPassDescriptorSetCurrentTexture(render_pass_descriptor: u32) void;
-extern fn gpuCreateCommandEncoder() u32;
-extern fn gpuEncoderBeginRenderPass(encoder: u32, render_pass_descriptor: u32) u32;
-extern fn gpuPassSetPipeline(pass: u32, pipeline: u32) void;
-extern fn gpuPassDraw(pass: u32, count: u32) void;
-extern fn gpuPassEnd(pass: u32) void;
-extern fn gpuEncoderFinish(encoder: u32) u32;
-extern fn gpuQueueSubmit(command_buffer: u32) void;
 
 pub const std_options = std.Options{
     .log_level = .info,
@@ -21,25 +10,46 @@ pub const std_options = std.Options{
 
 const red_code = @embedFile("shaders/red.wgsl");
 
-var pipeline: u32 = undefined;
-var render_pass_descriptor: u32 = undefined;
+var pipeline: gpu.RenderPipeline = undefined;
 
 pub export fn onInit() void {
     log.info("Hello, world!", .{});
-    const module = gpuCreateShaderModule(red_code.ptr, red_code.len);
-    pipeline = gpuCreateRenderPipeline(module);
-    render_pass_descriptor = gpuCreateRenderPassDescriptor();
 
-    render();
+    const module = gpu.createShaderModule(.{ .code = red_code });
+    pipeline = gpu.createRenderPipeline(.{
+        .vertex = .{
+            .module = module,
+        },
+        .fragment = .{
+            .module = module,
+        },
+    });
 }
 
-fn render() void {
-    gpuRenderPassDescriptorSetCurrentTexture(render_pass_descriptor);
-    const encoder = gpuCreateCommandEncoder();
-    const pass = gpuEncoderBeginRenderPass(encoder, render_pass_descriptor);
-    gpuPassSetPipeline(pass, pipeline);
-    gpuPassDraw(pass, 3);
-    gpuPassEnd(pass);
-    const command_buffer = gpuEncoderFinish(encoder);
-    gpuQueueSubmit(command_buffer);
+pub export fn onDraw() void {
+    const back_buffer = gpu.getCurrentTextureView();
+    defer back_buffer.release();
+
+    const command_encoder = gpu.createCommandEncoder();
+    defer command_encoder.release();
+
+    const render_pass = command_encoder.beginRenderPass(.{
+        .color_attachments = &.{
+            .{
+                .view = back_buffer,
+                .load_op = .clear,
+                .store_op = .store,
+                .clear_value = .{ .r = 0.2, .g = 0.2, .b = 0.3, .a = 1 },
+            },
+        },
+    });
+    defer render_pass.release();
+
+    render_pass.setPipeline(pipeline);
+    render_pass.draw(3, 1, 0, 0);
+    render_pass.end();
+
+    const command_buffer = command_encoder.finish();
+    defer command_buffer.release();
+    gpu.queueSubmit(command_buffer);
 }

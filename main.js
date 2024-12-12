@@ -8,12 +8,18 @@ function resizeCanvas() {
 }
 
 const readCharStr = (ptr, len) => {
-    const array = new Uint8Array(memory.buffer, ptr, len);
+    const array = memoryU8.slice(ptr, ptr + len);
     const decoder = new TextDecoder();
     return decoder.decode(array);
 };
 
-const performanceNow = () => performance.now();
+const readSlicePtr = (slicePtr) => {
+    const ptr = memoryU32[slicePtr / 4];
+    const len = memoryU32[slicePtr / 4 + 1];
+    return readCharStr(ptr, len);
+}
+
+const performance_now = () => performance.now();
 
 let log_string = "";
 const wasm_log_write = (ptr, len) => {
@@ -24,128 +30,114 @@ const wasm_log_flush = () => {
     log_string = "";
 };
 
-let modules = [];
-let moduleHandles = 0;
-const gpuCreateShaderModule = (codePtr, codeLen) => {
-    const code = readCharStr(codePtr, codeLen);
+const loadOps = ["load", "clear"];
+const storeOps = ["store", "discard"];
+
+let wgpu = {};
+let wgpuIdCounter = 2;
+const wgpuStore = (object) => {
+    while (wgpu[wgpuIdCounter]) wgpuIdCounter = wgpuIdCounter < 2147483647 ? wgpuIdCounter + 1 : 2;
+    wgpu[wgpuIdCounter] = object;
+    object.wid = wgpuIdCounter;
+    return wgpuIdCounter++;
+}
+
+const wgpu_object_destroy = (id) => {
+    const object = wgpu[id];
+    if (object) {
+        object.wid = 0;
+        // WebGPU objects of type GPUDevice, GPUBuffer, GPUTexture and GPUQuerySet have an explicit .destroy() function. Call that if applicable.
+        if (object["destroy"]) object.destroy();
+        delete wgpu[id];
+    }
+}
+
+const wgpu_device_create_shader_module = (descriptor) => {
+    const code = readSlicePtr(descriptor);
     const module = device.createShaderModule({ code });
-    moduleHandles++;
-    modules[moduleHandles] = module;
-    return moduleHandles;
+    return wgpuStore(module);
 };
 
-let pipelines = [];
-let pipelineHandles = 0;
-const gpuCreateRenderPipeline = (moduleHandle) => {
-    const module = modules[moduleHandle];
+const wgpu_device_create_render_pipeline = (descriptor) => {
+    const vertexModule = wgpu[memoryU32[descriptor / 4]];
+    const fragmentModule = wgpu[memoryU32[descriptor / 4 + 1]];
     const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
     const pipeline = device.createRenderPipeline({
         label: 'our hardcoded red triangle pipeline',
         layout: 'auto',
         vertex: {
-            module,
+            module: vertexModule,
         },
         fragment: {
-            module,
+            module: fragmentModule,
             targets: [{ format: presentationFormat }],
         },
     });
-    pipelineHandles++;
-    pipelines[pipelineHandles] = pipeline;
-    return pipelineHandles;
+    return wgpuStore(pipeline);
 }
 
-let renderPassDescriptors = [];
-let renderPassDescriptorHandles = 0;
-const gpuCreateRenderPassDescriptor = () => {
-    const renderPassDescriptor = {
-        label: 'our basic canvas renderPass',
-        colorAttachments: [
-            {
-                // view: <- to be filled out when we render
-                clearValue: [0.3, 0.3, 0.3, 1],
-                loadOp: 'clear',
-                storeOp: 'store',
-            },
-        ],
-    };
-    renderPassDescriptorHandles++;
-    renderPassDescriptors[renderPassDescriptorHandles] = renderPassDescriptor;
-    return renderPassDescriptorHandles;
+const wgpu_get_current_texture_view = () => {
+    return wgpuStore(context.getCurrentTexture().createView());
 }
 
-const gpuRenderPassDescriptorSetCurrentTexture = (renderPassDescriptorHandle) => {
-    const renderPassDescriptor = renderPassDescriptors[renderPassDescriptorHandle];
-    renderPassDescriptor.colorAttachments[0].view = context.getCurrentTexture().createView();
+const wgpu_device_create_command_encoder = () => {
+    return wgpuStore(device.createCommandEncoder());
 }
 
-let encoders = [];
-let encoderHandles = 0;
-const gpuCreateCommandEncoder = () => {
-    const encoder = device.createCommandEncoder({ label: 'our encoder' });
-    encoderHandles++;
-    encoders[encoderHandles] = encoder;
-    return encoderHandles;
+const wgpu_command_encoder_begin_render_pass = (commandEncoder, descriptor) => {
+    let numColorAttachments = memoryU32[descriptor / 4 + 1];
+    let colorAttachments = [];
+    let i = memoryU32[descriptor / 4] / 4;
+    while (numColorAttachments--) {
+        colorAttachments.push({
+            view: wgpu[memoryU32[i]],
+            loadOp: loadOps[memoryU32[i + 1]],
+            storeOp: storeOps[memoryU32[i + 2]],
+            clearValue: [memoryF32[i + 3], memoryF32[i + 4], memoryF32[i + 5], memoryF32[i + 6]],
+        });
+        i += 7;
+    }
+    return wgpuStore(wgpu[commandEncoder].beginRenderPass({
+        colorAttachments,
+    }));
 }
 
-let passes = [];
-let passHandles = 0;
-const gpuEncoderBeginRenderPass = (encoderHandle, renderPassDescriptorHandle) => {
-    const encoder = encoders[encoderHandle];
-    const renderPassDescriptor = renderPassDescriptors[renderPassDescriptorHandle];
-    const pass = encoder.beginRenderPass(renderPassDescriptor);
-    passHandles++;
-    passes[passHandles] = pass;
-    return passHandles;
+const wgpu_encoder_set_pipeline = (passEncoder, pipeline) => {
+    wgpu[passEncoder].setPipeline(wgpu[pipeline]);
 }
 
-const gpuPassSetPipeline = (passHandle, pipelineHandle) => {
-    const pass = passes[passHandle];
-    const pipeline = pipelines[pipelineHandle];
-    pass.setPipeline(pipeline);
+const wgpu_render_commands_mixin_draw = (passEncoder, vertexCount, instanceCount, firstVertex, firstInstance) => {
+    wgpu[passEncoder].draw(vertexCount, instanceCount, firstVertex, firstInstance);
 }
 
-const gpuPassDraw = (passHandle, count) => {
-    const pass = passes[passHandle];
-    pass.draw(count);
+const wgpu_encoder_end = (encoder) => {
+    wgpu[encoder].end();
 }
 
-const gpuPassEnd = (passHandle) => {
-    const pass = passes[passHandle];
-    pass.end();
+const wgpu_encoder_finish = (encoder) => {
+    return wgpuStore(wgpu[encoder].finish());
 }
 
-let commandBuffers = [];
-let commandBufferHandles = 0;
-const gpuEncoderFinish = (encoderHandle) => {
-    const encoder = encoders[encoderHandle];
-    const commandBuffer = encoder.finish();
-    commandBufferHandles++;
-    commandBuffers[commandBufferHandles] = commandBuffer;
-    return commandBufferHandles;
-}
-
-const gpuQueueSubmit = (commandBufferHandle) => {
-    const commandBuffer = commandBuffers[commandBufferHandle];
-    device.queue.submit([commandBuffer]);
+const wgpu_queue_submit = (commandBuffer) => {
+    device.queue.submit([wgpu[commandBuffer]]);
 }
 
 const env = {
-    performanceNow,
+    performance_now,
     wasm_log_write,
     wasm_log_flush,
 
-    gpuCreateShaderModule,
-    gpuCreateRenderPipeline,
-    gpuCreateRenderPassDescriptor,
-    gpuRenderPassDescriptorSetCurrentTexture,
-    gpuCreateCommandEncoder,
-    gpuEncoderBeginRenderPass,
-    gpuPassSetPipeline,
-    gpuPassDraw,
-    gpuPassEnd,
-    gpuEncoderFinish,
-    gpuQueueSubmit,
+    wgpu_object_destroy,
+    wgpu_device_create_shader_module,
+    wgpu_device_create_render_pipeline,
+    wgpu_get_current_texture_view,
+    wgpu_device_create_command_encoder,
+    wgpu_command_encoder_begin_render_pass,
+    wgpu_encoder_set_pipeline,
+    wgpu_render_commands_mixin_draw,
+    wgpu_encoder_end,
+    wgpu_encoder_finish,
+    wgpu_queue_submit,
 };
 
 async function main() {
@@ -171,6 +163,15 @@ async function main() {
     const results = await WebAssembly.instantiate(bytes, { env });
     const instance = results.instance;
     window.memory = instance.exports.memory;
+    window.memoryU8 = new Uint8Array(memory.buffer);
+    window.memoryU32 = new Uint32Array(memory.buffer);
+    window.memoryF32 = new Float32Array(memory.buffer);
     instance.exports.onInit();
+
+    const draw = () => {
+        instance.exports.onDraw();
+        requestAnimationFrame(draw);
+    }
+    draw();
 }
 main();
