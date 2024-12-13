@@ -32,6 +32,7 @@ const wasm_log_flush = () => {
 
 const loadOps = ["load", "clear"];
 const storeOps = ["store", "discard"];
+const vertexFormats = ["float32", "float32x2", "float32x3", "float32x4",];
 
 let wgpu = {};
 let wgpuIdCounter = 2;
@@ -58,15 +59,44 @@ const wgpu_device_create_shader_module = (descriptor) => {
     return wgpuStore(module);
 };
 
+const wgpu_device_create_buffer = (descriptor) => {
+    return wgpuStore(device.createBuffer({
+        size: memoryU32[descriptor / 4],
+        usage: memoryU32[descriptor / 4 + 1],
+    }));
+}
+
 const wgpu_device_create_render_pipeline = (descriptor) => {
     const vertexModule = wgpu[memoryU32[descriptor / 4]];
-    const fragmentModule = wgpu[memoryU32[descriptor / 4 + 1]];
+    let vertexBufferPtr = memoryU32[descriptor / 4 + 1];
+    let vertexBufferLen = memoryU32[descriptor / 4 + 2];
+    const fragmentModule = wgpu[memoryU32[descriptor / 4 + 3]];
+    let vertexBuffers = [];
+    while (vertexBufferLen--) {
+        let attributes = [];
+        let attributesPtr = memoryU32[vertexBufferPtr / 4 + 1];
+        let attributesLen = memoryU32[vertexBufferPtr / 4 + 2];
+        while (attributesLen--) {
+            attributes.push({
+                format: vertexFormats[memoryU32[attributesPtr / 4]],
+                offset: memoryU32[attributesPtr / 4 + 1],
+                shaderLocation: memoryU32[attributesPtr / 4 + 2],
+            });
+            attributesPtr += 12;
+        }
+        vertexBuffers.push({
+            arrayStride: memoryU32[vertexBufferPtr / 4],
+            attributes,
+            stepMode: ["vertex", "instance"][memoryU32[vertexBufferPtr / 4 + 3]],
+        });
+        vertexBufferPtr += 16;
+    }
     const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
     const pipeline = device.createRenderPipeline({
-        label: 'our hardcoded red triangle pipeline',
         layout: 'auto',
         vertex: {
             module: vertexModule,
+            buffers: vertexBuffers,
         },
         fragment: {
             module: fragmentModule,
@@ -106,6 +136,10 @@ const wgpu_encoder_set_pipeline = (passEncoder, pipeline) => {
     wgpu[passEncoder].setPipeline(wgpu[pipeline]);
 }
 
+const wgpu_render_commands_mixin_set_vertex_buffer = (passEncoder, slot, buffer, offset, size) => {
+    wgpu[passEncoder].setVertexBuffer(slot, wgpu[buffer], offset, size < 0 ? void 0 : size);
+}
+
 const wgpu_render_commands_mixin_draw = (passEncoder, vertexCount, instanceCount, firstVertex, firstInstance) => {
     wgpu[passEncoder].draw(vertexCount, instanceCount, firstVertex, firstInstance);
 }
@@ -122,6 +156,10 @@ const wgpu_queue_submit = (commandBuffer) => {
     device.queue.submit([wgpu[commandBuffer]]);
 }
 
+const wgpu_queue_write_buffer = (buffer, bufferOffset, dataPtr, dataLen) => {
+    device.queue.writeBuffer(wgpu[buffer], bufferOffset, memoryU8, dataPtr, dataLen);
+}
+
 const env = {
     performance_now,
     wasm_log_write,
@@ -129,15 +167,18 @@ const env = {
 
     wgpu_object_destroy,
     wgpu_device_create_shader_module,
+    wgpu_device_create_buffer,
     wgpu_device_create_render_pipeline,
     wgpu_get_current_texture_view,
     wgpu_device_create_command_encoder,
     wgpu_command_encoder_begin_render_pass,
     wgpu_encoder_set_pipeline,
+    wgpu_render_commands_mixin_set_vertex_buffer,
     wgpu_render_commands_mixin_draw,
     wgpu_encoder_end,
     wgpu_encoder_finish,
     wgpu_queue_submit,
+    wgpu_queue_write_buffer,
 };
 
 async function main() {
@@ -170,7 +211,7 @@ async function main() {
 
     const draw = () => {
         instance.exports.onDraw();
-        requestAnimationFrame(draw);
+        // requestAnimationFrame(draw);
     }
     draw();
 }

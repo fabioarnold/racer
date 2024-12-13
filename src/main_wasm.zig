@@ -10,6 +10,8 @@ pub const std_options = std.Options{
 
 const red_code = @embedFile("shaders/red.wgsl");
 
+var vertex_buffer: gpu.Buffer = undefined;
+var index_buffer: gpu.Buffer = undefined;
 var pipeline: gpu.RenderPipeline = undefined;
 
 pub export fn onInit() void {
@@ -19,11 +21,52 @@ pub export fn onInit() void {
     pipeline = gpu.createRenderPipeline(.{
         .vertex = .{
             .module = module,
+            .buffers = &.{
+                .{
+                    .array_stride = (2 + 3) * 4,
+                    .attributes = &.{
+                        .{
+                            .format = .float32x2,
+                            .offset = 0,
+                            .shader_location = 0,
+                        },
+                        .{
+                            .format = .float32x3,
+                            .offset = 2 * 4,
+                            .shader_location = 1,
+                        },
+                    },
+                },
+            },
         },
         .fragment = .{
             .module = module,
         },
     });
+
+    const vertex_data = [_]f32{
+        // x, y          // r, g, b
+        -0.5, -0.5, 1.0, 0.0, 0.0, // bottom-left
+        0.5, -0.5, 0.0, 1.0, 0.0, // bottom-right
+        0.5, 0.5, 0.0, 0.0, 1.0, // top-right
+        -0.5, 0.5, 1.0, 1.0, 0.0, // top-left
+    };
+    const index_data = [_]u16{
+        0, 1, 2,
+        0, 2, 3,
+    };
+
+    vertex_buffer = gpu.createBuffer(.{
+        .size = @sizeOf(@TypeOf(vertex_data)),
+        .usage = .{ .vertex = true, .copy_dst = true },
+    });
+    index_buffer = gpu.createBuffer(.{
+        .size = @sizeOf(@TypeOf(index_data)),
+        .usage = .{ .index = true, .copy_dst = true },
+    });
+
+    gpu.queueWriteBuffer(vertex_buffer, 0, std.mem.sliceAsBytes(&vertex_data));
+    gpu.queueWriteBuffer(index_buffer, 0, std.mem.sliceAsBytes(&index_data));
 }
 
 pub export fn onDraw() void {
@@ -46,6 +89,8 @@ pub export fn onDraw() void {
     defer render_pass.release();
 
     render_pass.setPipeline(pipeline);
+    render_pass.setVertexBuffer(0, vertex_buffer, .{});
+    // render_pass.setIndexBuffer(index_buffer);
     render_pass.draw(.{ .vertex_count = 3 });
     render_pass.end();
 
