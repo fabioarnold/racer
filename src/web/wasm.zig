@@ -1,8 +1,10 @@
 const std = @import("std");
 
-extern fn wasm_log_write(ptr: [*]const u8, len: usize) void;
-
-extern fn wasm_log_flush() void;
+pub const performance = struct {
+    pub fn now() f64 {
+        return performance_now();
+    }
+};
 
 const WriteError = error{};
 const LogWriter = std.io.Writer(void, WriteError, writeLog);
@@ -25,3 +27,7 @@ pub fn log(
 
     wasm_log_flush();
 }
+
+extern fn performance_now() f64;
+extern fn wasm_log_write(ptr: [*]const u8, len: usize) void;
+extern fn wasm_log_flush() void;

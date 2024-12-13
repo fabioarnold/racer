@@ -10,6 +10,10 @@ pub const std_options = std.Options{
 
 const red_code = @embedFile("shaders/red.wgsl");
 
+var mvp: [16]f32 = undefined;
+
+var uniform_buffer: gpu.Buffer = undefined;
+var bind_group: gpu.BindGroup = undefined;
 var vertex_buffer: gpu.Buffer = undefined;
 var index_buffer: gpu.Buffer = undefined;
 var pipeline: gpu.RenderPipeline = undefined;
@@ -44,12 +48,23 @@ pub export fn onInit() void {
         },
     });
 
+    uniform_buffer = gpu.createBuffer(.{
+        .size = @sizeOf(@TypeOf(mvp)),
+        .usage = .{ .uniform = true, .copy_dst = true },
+    });
+
+    bind_group = gpu.createBindGroup(.{
+        .layout = pipeline.getBindGroupLayout(0),
+        .entries = &.{
+            .{ .binding = 0, .resource = .{ .buffer = uniform_buffer } },
+        },
+    });
+
     const vertex_data = [_]f32{
-        // x, y          // r, g, b
-        -0.5, -0.5, 1.0, 0.0, 0.0, // bottom-left
-        0.5, -0.5, 0.0, 1.0, 0.0, // bottom-right
-        0.5, 0.5, 0.0, 0.0, 1.0, // top-right
-        -0.5, 0.5, 1.0, 1.0, 0.0, // top-left
+        -0.5, -0.5, 1, 0, 0,
+        0.5,  -0.5, 0, 1, 0,
+        0.5,  0.5,  0, 0, 1,
+        -0.5, 0.5,  1, 1, 0,
     };
     const index_data = [_]u16{
         0, 1, 2,
@@ -70,6 +85,17 @@ pub export fn onInit() void {
 }
 
 pub export fn onDraw() void {
+    const angle: f32 = @floatCast(wasm.performance.now() / 1000.0);
+    const s = @sin(angle);
+    const c = @cos(angle);
+    mvp = .{
+        c,  s, 0, 0,
+        -s, c, 0, 0,
+        0,  0, 1, 0,
+        0,  0, 0, 1,
+    };
+    gpu.queueWriteBuffer(uniform_buffer, 0, std.mem.sliceAsBytes(&mvp));
+
     const back_buffer = gpu.getCurrentTextureView();
     defer back_buffer.release();
 
@@ -89,6 +115,7 @@ pub export fn onDraw() void {
     defer render_pass.release();
 
     render_pass.setPipeline(pipeline);
+    render_pass.setBindGroup(0, bind_group);
     render_pass.setVertexBuffer(0, vertex_buffer, .{});
     render_pass.setIndexBuffer(index_buffer, .uint16, .{});
     render_pass.drawIndexed(.{ .index_count = 6 });

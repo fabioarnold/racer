@@ -133,6 +133,27 @@ const wgpu_command_encoder_begin_render_pass = (commandEncoder, descriptor) => {
     }));
 }
 
+const wgpu_device_create_bind_group = (descriptor) => {
+    let entriesPtr = memoryU32[descriptor / 4 + 1];
+    let entriesLen = memoryU32[descriptor / 4 + 2];
+    let entries = [];
+    while (entriesLen--) {
+        entries.push({
+            binding: memoryU32[entriesPtr / 4],
+            resource: { buffer: wgpu[memoryU32[entriesPtr / 4 + 1]] },
+        });
+        entriesPtr += 8;
+    }
+    return wgpuStore(device.createBindGroup({
+        layout: wgpu[memoryU32[descriptor / 4]],
+        entries,
+    }));
+}
+
+const wgpu_pipeline_get_bind_group_layout = (pipeline, index) => {
+    return wgpuStore(wgpu[pipeline].getBindGroupLayout(index));
+}
+
 const wgpu_encoder_set_pipeline = (passEncoder, pipeline) => {
     wgpu[passEncoder].setPipeline(wgpu[pipeline]);
 }
@@ -161,6 +182,10 @@ const wgpu_encoder_finish = (encoder) => {
     return wgpuStore(wgpu[encoder].finish());
 }
 
+const wgpu_encoder_set_bind_group = (encoder, index, bindGroup) => {
+    wgpu[encoder].setBindGroup(index, wgpu[bindGroup]);
+}
+
 const wgpu_queue_submit = (commandBuffer) => {
     device.queue.submit([wgpu[commandBuffer]]);
 }
@@ -180,6 +205,8 @@ const env = {
     wgpu_device_create_render_pipeline,
     wgpu_get_current_texture_view,
     wgpu_device_create_command_encoder,
+    wgpu_device_create_bind_group,
+    wgpu_pipeline_get_bind_group_layout,
     wgpu_command_encoder_begin_render_pass,
     wgpu_encoder_set_pipeline,
     wgpu_render_commands_mixin_set_vertex_buffer,
@@ -188,6 +215,7 @@ const env = {
     wgpu_render_commands_mixin_draw_indexed,
     wgpu_encoder_end,
     wgpu_encoder_finish,
+    wgpu_encoder_set_bind_group,
     wgpu_queue_submit,
     wgpu_queue_write_buffer,
 };
@@ -222,7 +250,7 @@ async function main() {
 
     const draw = () => {
         instance.exports.onDraw();
-        // requestAnimationFrame(draw);
+        requestAnimationFrame(draw);
     }
     draw();
 }

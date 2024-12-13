@@ -8,9 +8,11 @@ struct VertexOut {
     @builtin(position) position: vec4f,
 }
 
+@group(0) @binding(0) var<uniform> mvp: mat4x4f;
+
 @vertex fn vs(in: VertexIn) -> VertexOut {
     var out: VertexOut;
-    out.position = vec4f(in.position, 0.0, 1.0);
+    out.position = mvp * vec4f(in.position, 0.0, 1.0);
     out.color = in.color;
     return out;
 }

@@ -34,6 +34,16 @@ pub const RenderPipelineDescriptor = struct {
     },
 };
 
+pub const BindGroupDescriptor = struct {
+    layout: BindGroupLayout,
+    entries: []const struct {
+        binding: u32,
+        resource: struct {
+            buffer: Buffer,
+        },
+    },
+};
+
 pub const Color = struct {
     r: f32,
     g: f32,
@@ -88,10 +98,19 @@ const Object = enum(u32) {
 };
 
 pub const ShaderModule = Object;
-pub const RenderPipeline = Object;
+pub const BindGroup = Object;
+pub const BindGroupLayout = Object;
 pub const TextureView = Object;
 pub const CommandBuffer = Object;
 pub const Buffer = Object;
+
+pub const RenderPipeline = struct {
+    object: Object,
+
+    pub fn getBindGroupLayout(self: RenderPipeline, index: u32) BindGroupLayout {
+        return wgpu_pipeline_get_bind_group_layout(self.object, index);
+    }
+};
 
 pub const CommandEncoder = struct {
     object: Object,
@@ -117,7 +136,11 @@ pub const RenderPass = struct {
     }
 
     pub fn setPipeline(self: RenderPass, pipeline: RenderPipeline) void {
-        wgpu_encoder_set_pipeline(self.object, pipeline);
+        wgpu_encoder_set_pipeline(self.object, pipeline.object);
+    }
+
+    pub fn setBindGroup(self: RenderPass, index: u32, bind_group: BindGroup) void {
+        wgpu_encoder_set_bind_group(self.object, index, bind_group);
     }
 
     const BufferOptions = struct {
@@ -169,7 +192,7 @@ pub fn createBuffer(descriptor: BufferDescriptor) Buffer {
 }
 
 pub fn createRenderPipeline(descriptor: RenderPipelineDescriptor) RenderPipeline {
-    return wgpu_device_create_render_pipeline(&descriptor);
+    return .{ .object = wgpu_device_create_render_pipeline(&descriptor) };
 }
 
 pub fn getCurrentTextureView() TextureView {
@@ -178,6 +201,10 @@ pub fn getCurrentTextureView() TextureView {
 
 pub fn createCommandEncoder() CommandEncoder {
     return .{ .object = wgpu_device_create_command_encoder() };
+}
+
+pub fn createBindGroup(descriptor: BindGroupDescriptor) BindGroup {
+    return wgpu_device_create_bind_group(&descriptor);
 }
 
 pub fn queueSubmit(command_buffer: CommandBuffer) void {
@@ -191,16 +218,19 @@ pub fn queueWriteBuffer(buffer: Buffer, buffer_offset: u32, data: []const u8) vo
 extern fn wgpu_object_destroy(Object) void;
 extern fn wgpu_device_create_shader_module(*const ShaderModuleDescriptor) ShaderModule;
 extern fn wgpu_device_create_buffer(*const BufferDescriptor) Buffer;
-extern fn wgpu_device_create_render_pipeline(*const RenderPipelineDescriptor) RenderPipeline;
+extern fn wgpu_device_create_render_pipeline(*const RenderPipelineDescriptor) Object;
 extern fn wgpu_get_current_texture_view() TextureView;
 extern fn wgpu_device_create_command_encoder() Object;
+extern fn wgpu_device_create_bind_group(*const BindGroupDescriptor) BindGroup;
+extern fn wgpu_pipeline_get_bind_group_layout(pipeline: Object, u32) BindGroupLayout;
 extern fn wgpu_command_encoder_begin_render_pass(command_encoder: Object, *const RenderPassDescriptor) Object;
-extern fn wgpu_encoder_set_pipeline(pass_encoder: Object, RenderPipeline) void;
+extern fn wgpu_encoder_set_pipeline(pass_encoder: Object, pipeline: Object) void;
 extern fn wgpu_render_commands_mixin_set_vertex_buffer(pass_encoder: Object, u32, Buffer, u32, i32) void;
 extern fn wgpu_render_commands_mixin_set_index_buffer(pass_encoder: Object, Buffer, IndexFormat, u32, i32) void;
 extern fn wgpu_render_commands_mixin_draw(pass_encoder: Object, u32, u32, u32, u32, u32) void;
 extern fn wgpu_render_commands_mixin_draw_indexed(pass_encoder: Object, u32, u32, u32, u32, u32) void;
 extern fn wgpu_encoder_end(pass_encoder: Object) void;
 extern fn wgpu_encoder_finish(command_encoder: Object) CommandBuffer;
+extern fn wgpu_encoder_set_bind_group(encoder: Object, u32, BindGroup) void;
 extern fn wgpu_queue_submit(command_buffer: CommandBuffer) void;
 extern fn wgpu_queue_write_buffer(buffer: Buffer, buffer_offset: u32, data_ptr: [*]const u8, data_len: u32) void;
