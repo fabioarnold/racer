@@ -90,8 +90,8 @@ pub export fn onDraw() void {
 
     render_pass.setPipeline(pipeline);
     render_pass.setVertexBuffer(0, vertex_buffer, .{});
-    // render_pass.setIndexBuffer(index_buffer);
-    render_pass.draw(.{ .vertex_count = 3 });
+    render_pass.setIndexBuffer(index_buffer, .uint16, .{});
+    render_pass.drawIndexed(.{ .index_count = 6 });
     render_pass.end();
 
     const command_buffer = command_encoder.finish();

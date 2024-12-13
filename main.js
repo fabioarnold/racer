@@ -32,7 +32,8 @@ const wasm_log_flush = () => {
 
 const loadOps = ["load", "clear"];
 const storeOps = ["store", "discard"];
-const vertexFormats = ["float32", "float32x2", "float32x3", "float32x4",];
+const vertexFormats = ["float32", "float32x2", "float32x3", "float32x4"];
+const indexFormats = ["uint16", "uint32"];
 
 let wgpu = {};
 let wgpuIdCounter = 2;
@@ -140,8 +141,16 @@ const wgpu_render_commands_mixin_set_vertex_buffer = (passEncoder, slot, buffer,
     wgpu[passEncoder].setVertexBuffer(slot, wgpu[buffer], offset, size < 0 ? void 0 : size);
 }
 
+const wgpu_render_commands_mixin_set_index_buffer = (passEncoder, buffer, indexFormat, offset, size) => {
+    wgpu[passEncoder].setIndexBuffer(wgpu[buffer], indexFormats[indexFormat], offset, size < 0 ? void 0 : size);
+}
+
 const wgpu_render_commands_mixin_draw = (passEncoder, vertexCount, instanceCount, firstVertex, firstInstance) => {
     wgpu[passEncoder].draw(vertexCount, instanceCount, firstVertex, firstInstance);
+}
+
+const wgpu_render_commands_mixin_draw_indexed = (passEncoder, indexCount, instanceCount, firstVertex, baseVertex, firstInstance) => {
+    wgpu[passEncoder].drawIndexed(indexCount, instanceCount, firstVertex, baseVertex, firstInstance);
 }
 
 const wgpu_encoder_end = (encoder) => {
@@ -174,7 +183,9 @@ const env = {
     wgpu_command_encoder_begin_render_pass,
     wgpu_encoder_set_pipeline,
     wgpu_render_commands_mixin_set_vertex_buffer,
+    wgpu_render_commands_mixin_set_index_buffer,
     wgpu_render_commands_mixin_draw,
+    wgpu_render_commands_mixin_draw_indexed,
     wgpu_encoder_end,
     wgpu_encoder_finish,
     wgpu_queue_submit,

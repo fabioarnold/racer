@@ -14,6 +14,11 @@ pub const VertexFormat = enum(u32) {
     float32x4,
 };
 
+pub const IndexFormat = enum(u32) {
+    uint16,
+    uint32,
+};
+
 pub const RenderPipelineDescriptor = struct {
     vertex: struct { module: ShaderModule, buffers: []const struct {
         array_stride: u32,
@@ -115,13 +120,18 @@ pub const RenderPass = struct {
         wgpu_encoder_set_pipeline(self.object, pipeline);
     }
 
-    const VertexBufferOptions = struct {
+    const BufferOptions = struct {
         const max_size = -1;
         offset: u32 = 0,
         size: i32 = max_size,
     };
-    pub fn setVertexBuffer(self: RenderPass, slot: u32, buffer: Buffer, options: VertexBufferOptions) void {
+
+    pub fn setVertexBuffer(self: RenderPass, slot: u32, buffer: Buffer, options: BufferOptions) void {
         wgpu_render_commands_mixin_set_vertex_buffer(self.object, slot, buffer, options.offset, options.size);
+    }
+
+    pub fn setIndexBuffer(self: RenderPass, buffer: Buffer, format: IndexFormat, options: BufferOptions) void {
+        wgpu_render_commands_mixin_set_index_buffer(self.object, buffer, format, options.offset, options.size);
     }
 
     const DrawArgs = struct {
@@ -132,6 +142,17 @@ pub const RenderPass = struct {
     };
     pub fn draw(self: RenderPass, args: DrawArgs) void {
         wgpu_render_commands_mixin_draw(self.object, args.vertex_count, args.instance_count, args.first_vertex, args.first_instance);
+    }
+
+    const DrawIndexedArgs = struct {
+        index_count: u32,
+        instance_count: u32 = 1,
+        first_vertex: u32 = 0,
+        base_vertex: u32 = 0,
+        first_instance: u32 = 0,
+    };
+    pub fn drawIndexed(self: RenderPass, args: DrawIndexedArgs) void {
+        wgpu_render_commands_mixin_draw_indexed(self.object, args.index_count, args.instance_count, args.first_vertex, args.base_vertex, args.first_instance);
     }
 
     pub fn end(self: RenderPass) void {
@@ -176,7 +197,9 @@ extern fn wgpu_device_create_command_encoder() Object;
 extern fn wgpu_command_encoder_begin_render_pass(command_encoder: Object, *const RenderPassDescriptor) Object;
 extern fn wgpu_encoder_set_pipeline(pass_encoder: Object, RenderPipeline) void;
 extern fn wgpu_render_commands_mixin_set_vertex_buffer(pass_encoder: Object, u32, Buffer, u32, i32) void;
-extern fn wgpu_render_commands_mixin_draw(pass_encoder: Object, u32, u32, u32, u32) void;
+extern fn wgpu_render_commands_mixin_set_index_buffer(pass_encoder: Object, Buffer, IndexFormat, u32, i32) void;
+extern fn wgpu_render_commands_mixin_draw(pass_encoder: Object, u32, u32, u32, u32, u32) void;
+extern fn wgpu_render_commands_mixin_draw_indexed(pass_encoder: Object, u32, u32, u32, u32, u32) void;
 extern fn wgpu_encoder_end(pass_encoder: Object) void;
 extern fn wgpu_encoder_finish(command_encoder: Object) CommandBuffer;
 extern fn wgpu_queue_submit(command_buffer: CommandBuffer) void;
