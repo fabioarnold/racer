@@ -34,6 +34,7 @@ const loadOps = ["load", "clear"];
 const storeOps = ["store", "discard"];
 const vertexFormats = ["float32", "float32x2", "float32x3", "float32x4"];
 const indexFormats = ["uint16", "uint32"];
+const textureFormats = ["rgba8unorm"];
 
 let wgpu = {};
 let wgpuIdCounter = 2;
@@ -115,6 +116,18 @@ const wgpu_device_create_command_encoder = () => {
     return wgpuStore(device.createCommandEncoder());
 }
 
+const wgpu_device_create_texture = (descriptor) => {
+    return wgpuStore(device.createTexture({
+        size: [memoryU32[descriptor / 4], memoryU32[descriptor / 4 + 1], memoryU32[descriptor / 4 + 2],],
+        format: textureFormats[memoryU32[descriptor / 4 + 3]],
+        usage: memoryU32[descriptor / 4 + 4],
+    }));
+}
+
+const wgpu_device_create_sampler = (descriptor) => {
+    return wgpuStore(device.createSampler());
+}
+
 const wgpu_command_encoder_begin_render_pass = (commandEncoder, descriptor) => {
     let numColorAttachments = memoryU32[descriptor / 4 + 1];
     let colorAttachments = [];
@@ -138,9 +151,11 @@ const wgpu_device_create_bind_group = (descriptor) => {
     let entriesLen = memoryU32[descriptor / 4 + 2];
     let entries = [];
     while (entriesLen--) {
+        let resource = wgpu[memoryU32[entriesPtr / 4 + 1]];
+        if (resource instanceof GPUBuffer) resource = { buffer: resource };
         entries.push({
             binding: memoryU32[entriesPtr / 4],
-            resource: { buffer: wgpu[memoryU32[entriesPtr / 4 + 1]] },
+            resource,
         });
         entriesPtr += 8;
     }
@@ -148,6 +163,10 @@ const wgpu_device_create_bind_group = (descriptor) => {
         layout: wgpu[memoryU32[descriptor / 4]],
         entries,
     }));
+}
+
+const wgpu_texture_create_view = (texture) => {
+    return wgpuStore(wgpu[texture].createView());
 }
 
 const wgpu_pipeline_get_bind_group_layout = (pipeline, index) => {
@@ -194,6 +213,15 @@ const wgpu_queue_write_buffer = (buffer, bufferOffset, dataPtr, dataLen) => {
     device.queue.writeBuffer(wgpu[buffer], bufferOffset, memoryU8, dataPtr, dataLen);
 }
 
+const wgpu_queue_write_texture = (texture, dataPtr, dataLen, bytesPerRow, rowsPerImage, writeWidth, writeHeight, writeDepth) => {
+    const data = new Uint8Array(memory.buffer, dataPtr, dataLen);
+    const dataLayout = {};
+    if (bytesPerRow > 0) dataLayout.bytesPerRow = bytesPerRow;
+    if (rowsPerImage > 0) dataLayout.rowsPerImage = rowsPerImage;
+    const size = [writeWidth, writeHeight, writeDepth];
+    device.queue.writeTexture({ texture: wgpu[texture] }, data, dataLayout, size);
+}
+
 const env = {
     performance_now,
     wasm_log_write,
@@ -205,7 +233,10 @@ const env = {
     wgpu_device_create_render_pipeline,
     wgpu_get_current_texture_view,
     wgpu_device_create_command_encoder,
+    wgpu_device_create_texture,
+    wgpu_device_create_sampler,
     wgpu_device_create_bind_group,
+    wgpu_texture_create_view,
     wgpu_pipeline_get_bind_group_layout,
     wgpu_command_encoder_begin_render_pass,
     wgpu_encoder_set_pipeline,
@@ -218,6 +249,7 @@ const env = {
     wgpu_encoder_set_bind_group,
     wgpu_queue_submit,
     wgpu_queue_write_buffer,
+    wgpu_queue_write_texture,
 };
 
 async function main() {

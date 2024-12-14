@@ -19,8 +19,6 @@ var index_buffer: gpu.Buffer = undefined;
 var pipeline: gpu.RenderPipeline = undefined;
 
 pub export fn onInit() void {
-    log.info("Hello, world!", .{});
-
     const module = gpu.createShaderModule(.{ .code = red_code });
     pipeline = gpu.createRenderPipeline(.{
         .vertex = .{
@@ -53,10 +51,34 @@ pub export fn onInit() void {
         .usage = .{ .uniform = true, .copy_dst = true },
     });
 
+    const texture_data = [_]u8{
+        0,   0, 255, 255, 255, 0,   0, 255, 255, 0,   0, 255, 255, 0,   0, 255, 255, 0, 0, 255,
+        255, 0, 0,   255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 0, 0, 255,
+        255, 0, 0,   255, 255, 255, 0, 255, 255, 0,   0, 255, 255, 0,   0, 255, 255, 0, 0, 255,
+        255, 0, 0,   255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 0,   0, 255, 255, 0, 0, 255,
+        255, 0, 0,   255, 255, 255, 0, 255, 255, 0,   0, 255, 255, 0,   0, 255, 255, 0, 0, 255,
+        255, 0, 0,   255, 255, 255, 0, 255, 255, 0,   0, 255, 255, 0,   0, 255, 255, 0, 0, 255,
+        255, 0, 0,   255, 255, 0,   0, 255, 255, 0,   0, 255, 255, 0,   0, 255, 255, 0, 0, 255,
+    };
+    const texture = gpu.createTexture(.{
+        .size = .{ .width = 5, .height = 7 },
+        .format = .rgba8unorm,
+        .usage = .{ .texture_binding = true, .copy_dst = true },
+    });
+    gpu.queueWriteTexture(texture, .{
+        .data = &texture_data,
+        .bytes_per_row = 4 * 5,
+        .width = 5,
+        .height = 7,
+    });
+    const sampler = gpu.createSampler(.{});
+
     bind_group = gpu.createBindGroup(.{
         .layout = pipeline.getBindGroupLayout(0),
         .entries = &.{
-            .{ .binding = 0, .resource = .{ .buffer = uniform_buffer } },
+            .{ .binding = 0, .resource = uniform_buffer },
+            .{ .binding = 1, .resource = sampler },
+            .{ .binding = 2, .resource = texture.createView() },
         },
     });
 

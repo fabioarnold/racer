@@ -19,6 +19,10 @@ pub const IndexFormat = enum(u32) {
     uint32,
 };
 
+pub const TextureFormat = enum(u32) {
+    rgba8unorm,
+};
+
 pub const RenderPipelineDescriptor = struct {
     vertex: struct { module: ShaderModule, buffers: []const struct {
         array_stride: u32,
@@ -34,13 +38,32 @@ pub const RenderPipelineDescriptor = struct {
     },
 };
 
+pub const TextureUsage = packed struct(u32) {
+    copy_src: bool = false,
+    copy_dst: bool = false,
+    texture_binding: bool = false,
+    storage_binding: bool = false,
+    render_attachment: bool = false,
+    _: u27 = 0,
+};
+
+pub const TextureDescriptor = struct {
+    size: struct {
+        width: u32,
+        height: u32 = 1,
+        depth: u32 = 1,
+    },
+    format: TextureFormat,
+    usage: TextureUsage,
+};
+
+pub const SamplerDescriptor = struct {};
+
 pub const BindGroupDescriptor = struct {
     layout: BindGroupLayout,
     entries: []const struct {
         binding: u32,
-        resource: struct {
-            buffer: Buffer,
-        },
+        resource: Object,
     },
 };
 
@@ -98,11 +121,20 @@ const Object = enum(u32) {
 };
 
 pub const ShaderModule = Object;
+pub const Sampler = Object;
 pub const BindGroup = Object;
 pub const BindGroupLayout = Object;
 pub const TextureView = Object;
 pub const CommandBuffer = Object;
 pub const Buffer = Object;
+
+pub const Texture = struct {
+    object: Object,
+
+    pub fn createView(self: Texture) TextureView {
+        return wgpu_texture_create_view(self.object);
+    }
+};
 
 pub const RenderPipeline = struct {
     object: Object,
@@ -203,6 +235,14 @@ pub fn createCommandEncoder() CommandEncoder {
     return .{ .object = wgpu_device_create_command_encoder() };
 }
 
+pub fn createTexture(descriptor: TextureDescriptor) Texture {
+    return .{ .object = wgpu_device_create_texture(&descriptor) };
+}
+
+pub fn createSampler(descriptor: SamplerDescriptor) Sampler {
+    return wgpu_device_create_sampler(&descriptor);
+}
+
 pub fn createBindGroup(descriptor: BindGroupDescriptor) BindGroup {
     return wgpu_device_create_bind_group(&descriptor);
 }
@@ -215,13 +255,28 @@ pub fn queueWriteBuffer(buffer: Buffer, buffer_offset: u32, data: []const u8) vo
     wgpu_queue_write_buffer(buffer, buffer_offset, data.ptr, data.len);
 }
 
+pub const TextureWriteArgs = struct {
+    data: []const u8,
+    bytes_per_row: u32 = 0,
+    rows_per_image: u32 = 0,
+    width: u32,
+    height: u32 = 1,
+    depth: u32 = 1,
+};
+pub fn queueWriteTexture(texture: Texture, args: TextureWriteArgs) void {
+    wgpu_queue_write_texture(texture.object, args.data.ptr, args.data.len, args.bytes_per_row, args.rows_per_image, args.width, args.height, args.depth);
+}
+
 extern fn wgpu_object_destroy(Object) void;
 extern fn wgpu_device_create_shader_module(*const ShaderModuleDescriptor) ShaderModule;
 extern fn wgpu_device_create_buffer(*const BufferDescriptor) Buffer;
 extern fn wgpu_device_create_render_pipeline(*const RenderPipelineDescriptor) Object;
 extern fn wgpu_get_current_texture_view() TextureView;
 extern fn wgpu_device_create_command_encoder() Object;
+extern fn wgpu_device_create_texture(*const TextureDescriptor) Object;
+extern fn wgpu_device_create_sampler(*const SamplerDescriptor) Sampler;
 extern fn wgpu_device_create_bind_group(*const BindGroupDescriptor) BindGroup;
+extern fn wgpu_texture_create_view(texture: Object) TextureView;
 extern fn wgpu_pipeline_get_bind_group_layout(pipeline: Object, u32) BindGroupLayout;
 extern fn wgpu_command_encoder_begin_render_pass(command_encoder: Object, *const RenderPassDescriptor) Object;
 extern fn wgpu_encoder_set_pipeline(pass_encoder: Object, pipeline: Object) void;
@@ -234,3 +289,4 @@ extern fn wgpu_encoder_finish(command_encoder: Object) CommandBuffer;
 extern fn wgpu_encoder_set_bind_group(encoder: Object, u32, BindGroup) void;
 extern fn wgpu_queue_submit(command_buffer: CommandBuffer) void;
 extern fn wgpu_queue_write_buffer(buffer: Buffer, buffer_offset: u32, data_ptr: [*]const u8, data_len: u32) void;
+extern fn wgpu_queue_write_texture(texture: Object, data_ptr: [*]const u8, data_len: u32, u32, u32, u32, u32, u32) void;
