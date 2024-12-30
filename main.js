@@ -34,7 +34,9 @@ const loadOps = ["load", "clear"];
 const storeOps = ["store", "discard"];
 const vertexFormats = ["float32", "float32x2", "float32x3", "float32x4"];
 const indexFormats = ["uint16", "uint32"];
-const textureFormats = ["rgba8unorm"];
+const textureFormats = ["rgba8unorm", "depth24plus"];
+const textureDimensions = ["2d", "2d-array"];
+const depthCompareFunctions = ["less", "greater"];
 
 let wgpu = {};
 let wgpuIdCounter = 2;
@@ -73,6 +75,7 @@ const wgpu_device_create_render_pipeline = (descriptor) => {
     let vertexBufferPtr = memoryU32[descriptor / 4 + 1];
     let vertexBufferLen = memoryU32[descriptor / 4 + 2];
     const fragmentModule = wgpu[memoryU32[descriptor / 4 + 3]];
+    const depthStencilPtr = memoryU32[descriptor / 4 + 4];
     let vertexBuffers = [];
     while (vertexBufferLen--) {
         let attributes = [];
@@ -93,6 +96,14 @@ const wgpu_device_create_render_pipeline = (descriptor) => {
         });
         vertexBufferPtr += 16;
     }
+    let depthStencil = undefined;
+    if (depthStencilPtr > 0) {
+        depthStencil = {
+            depthCompare: depthCompareFunctions[memoryU32[depthStencilPtr / 4]],
+            depthWriteEnabled: memoryU32[depthStencilPtr / 4 + 1] != 0,
+            format: textureFormats[memoryU32[depthStencilPtr / 4 + 2]],
+        };
+    }
     const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
     const pipeline = device.createRenderPipeline({
         layout: 'auto',
@@ -104,12 +115,13 @@ const wgpu_device_create_render_pipeline = (descriptor) => {
             module: fragmentModule,
             targets: [{ format: presentationFormat }],
         },
+        depthStencil,
     });
     return wgpuStore(pipeline);
 }
 
-const wgpu_get_current_texture_view = () => {
-    return wgpuStore(context.getCurrentTexture().createView());
+const wgpu_canvas_context_get_current_texture = () => {
+    return wgpuStore(context.getCurrentTexture());
 }
 
 const wgpu_device_create_command_encoder = () => {
@@ -129,10 +141,10 @@ const wgpu_device_create_sampler = (descriptor) => {
 }
 
 const wgpu_command_encoder_begin_render_pass = (commandEncoder, descriptor) => {
-    let numColorAttachments = memoryU32[descriptor / 4 + 1];
+    let colorAttachmentsLen = memoryU32[descriptor / 4 + 1];
     let colorAttachments = [];
     let i = memoryU32[descriptor / 4] / 4;
-    while (numColorAttachments--) {
+    while (colorAttachmentsLen--) {
         colorAttachments.push({
             view: wgpu[memoryU32[i]],
             loadOp: loadOps[memoryU32[i + 1]],
@@ -141,8 +153,19 @@ const wgpu_command_encoder_begin_render_pass = (commandEncoder, descriptor) => {
         });
         i += 7;
     }
+    let depthStencilAttachment = undefined;
+    const depthStencilAttachmentPtr = memoryU32[descriptor / 4 + 2];
+    if (depthStencilAttachmentPtr > 0) {
+        depthStencilAttachment = {
+            view: wgpu[memoryU32[depthStencilAttachmentPtr / 4]],
+            depthLoadOp: loadOps[memoryU32[depthStencilAttachmentPtr / 4 + 1]],
+            depthStoreOp: storeOps[memoryU32[depthStencilAttachmentPtr / 4 + 2]],
+            depthClearValue: memoryF32[depthStencilAttachmentPtr / 4 + 3],
+        };
+    }
     return wgpuStore(wgpu[commandEncoder].beginRenderPass({
         colorAttachments,
+        depthStencilAttachment,
     }));
 }
 
@@ -165,8 +188,21 @@ const wgpu_device_create_bind_group = (descriptor) => {
     }));
 }
 
-const wgpu_texture_create_view = (texture) => {
-    return wgpuStore(wgpu[texture].createView());
+const wgpu_texture_create_view = (texture, descriptor) => {
+    const dimension = textureDimensions[memoryU32[descriptor / 4]];
+    const arrayLayerCount = memoryU32[descriptor / 4 + 1];
+    return wgpuStore(wgpu[texture].createView({
+        dimension,
+        arrayLayerCount,
+    }));
+}
+
+const wgpu_texture_width = (texture) => {
+    return wgpu[texture].width;
+}
+
+const wgpu_texture_height = (texture) => {
+    return wgpu[texture].height;
 }
 
 const wgpu_pipeline_get_bind_group_layout = (pipeline, index) => {
@@ -228,15 +264,17 @@ const env = {
     wasm_log_flush,
 
     wgpu_object_destroy,
+    wgpu_canvas_context_get_current_texture,
     wgpu_device_create_shader_module,
     wgpu_device_create_buffer,
     wgpu_device_create_render_pipeline,
-    wgpu_get_current_texture_view,
     wgpu_device_create_command_encoder,
     wgpu_device_create_texture,
     wgpu_device_create_sampler,
     wgpu_device_create_bind_group,
     wgpu_texture_create_view,
+    wgpu_texture_width,
+    wgpu_texture_height,
     wgpu_pipeline_get_bind_group_layout,
     wgpu_command_encoder_begin_render_pass,
     wgpu_encoder_set_pipeline,

@@ -1,6 +1,7 @@
 const std = @import("std");
 const wasm = @import("web/wasm.zig");
 const gpu = @import("web/gpu.zig");
+const la = @import("linear_algebra.zig");
 const log = std.log.scoped(.main_wasm);
 
 pub const std_options = std.Options{
@@ -8,7 +9,13 @@ pub const std_options = std.Options{
     .logFn = wasm.log,
 };
 
+var depth_texture: gpu.Texture = undefined;
+
 const red_code = @embedFile("shaders/red.wgsl");
+
+const texture_data = @embedFile("textures/brickwall.data");
+const texture_width = 32;
+const texture_height = 32;
 
 var mvp: [16]f32 = undefined;
 
@@ -19,6 +26,13 @@ var index_buffer: gpu.Buffer = undefined;
 var pipeline: gpu.RenderPipeline = undefined;
 
 pub export fn onInit() void {
+    const back_buffer = gpu.getCurrentTexture();
+    depth_texture = gpu.createTexture(.{
+        .size = .{ .width = back_buffer.getWidth(), .height = back_buffer.getHeight() },
+        .format = .depth24plus,
+        .usage = .{ .render_attachment = true },
+    });
+
     const module = gpu.createShaderModule(.{ .code = red_code });
     pipeline = gpu.createRenderPipeline(.{
         .vertex = .{
@@ -51,25 +65,16 @@ pub export fn onInit() void {
         .usage = .{ .uniform = true, .copy_dst = true },
     });
 
-    const texture_data = [_]u8{
-        0,   0, 255, 255, 255, 0,   0, 255, 255, 0,   0, 255, 255, 0,   0, 255, 255, 0, 0, 255,
-        255, 0, 0,   255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 0, 0, 255,
-        255, 0, 0,   255, 255, 255, 0, 255, 255, 0,   0, 255, 255, 0,   0, 255, 255, 0, 0, 255,
-        255, 0, 0,   255, 255, 255, 0, 255, 255, 255, 0, 255, 255, 0,   0, 255, 255, 0, 0, 255,
-        255, 0, 0,   255, 255, 255, 0, 255, 255, 0,   0, 255, 255, 0,   0, 255, 255, 0, 0, 255,
-        255, 0, 0,   255, 255, 255, 0, 255, 255, 0,   0, 255, 255, 0,   0, 255, 255, 0, 0, 255,
-        255, 0, 0,   255, 255, 0,   0, 255, 255, 0,   0, 255, 255, 0,   0, 255, 255, 0, 0, 255,
-    };
     const texture = gpu.createTexture(.{
-        .size = .{ .width = 5, .height = 7 },
+        .size = .{ .width = texture_width, .height = texture_height },
         .format = .rgba8unorm,
         .usage = .{ .texture_binding = true, .copy_dst = true },
     });
     gpu.queueWriteTexture(texture, .{
-        .data = &texture_data,
-        .bytes_per_row = 4 * 5,
-        .width = 5,
-        .height = 7,
+        .data = texture_data,
+        .bytes_per_row = 4 * texture_width,
+        .width = texture_width,
+        .height = texture_height,
     });
     const sampler = gpu.createSampler(.{});
 
@@ -78,7 +83,7 @@ pub export fn onInit() void {
         .entries = &.{
             .{ .binding = 0, .resource = uniform_buffer },
             .{ .binding = 1, .resource = sampler },
-            .{ .binding = 2, .resource = texture.createView() },
+            .{ .binding = 2, .resource = texture.createView(.{}) },
         },
     });
 
@@ -118,20 +123,47 @@ pub export fn onDraw() void {
     };
     gpu.queueWriteBuffer(uniform_buffer, 0, std.mem.sliceAsBytes(&mvp));
 
-    const back_buffer = gpu.getCurrentTextureView();
+    const back_buffer = gpu.getCurrentTexture();
     defer back_buffer.release();
+
+    const width = back_buffer.getWidth();
+    const height = back_buffer.getHeight();
+
+    if (depth_texture.getWidth() != width or depth_texture.getHeight() != height) {
+        depth_texture.release();
+        depth_texture = gpu.createTexture(.{
+            .size = .{ .width = width, .height = height },
+            .format = .depth24plus,
+            .usage = .{ .render_attachment = true },
+        });
+    }
+
+    const aspect_ratio = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
+
+    const projection = la.perspective(60, aspect_ratio, 0.01);
+    _ = projection;
 
     const command_encoder = gpu.createCommandEncoder();
     defer command_encoder.release();
 
+    const back_buffer_view = back_buffer.createView(.{});
+    defer back_buffer_view.release();
+    const depth_texture_view = depth_texture.createView(.{});
+    defer depth_texture_view.release();
     const render_pass = command_encoder.beginRenderPass(.{
         .color_attachments = &.{
             .{
-                .view = back_buffer,
+                .view = back_buffer_view,
                 .load_op = .clear,
                 .store_op = .store,
                 .clear_value = .{ .r = 0.2, .g = 0.2, .b = 0.3, .a = 1 },
             },
+        },
+        .depth_stencil_attachment = &.{
+            .view = depth_texture_view,
+            .depth_load_op = .clear,
+            .depth_store_op = .store,
+            .depth_clear_value = 0,
         },
     });
     defer render_pass.release();

@@ -18,9 +18,10 @@ struct VertexOut {
     out.position = mvp * vec4f(in.position, 0.0, 1.0);
     out.color = in.color;
     out.texcoord = in.position + vec2f(0.5);
+    out.texcoord.y = 1.0 - out.texcoord.y;
     return out;
 }
 
 @fragment fn fs(in: VertexOut) -> @location(0) vec4f {
-    return textureSample(ourTexture, ourSampler, in.texcoord) * vec4f(in.color, 1.0);
+    return mix(textureSample(ourTexture, ourSampler, in.texcoord), vec4f(in.color, 1.0), 0.5);
 }

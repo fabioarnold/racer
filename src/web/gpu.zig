@@ -21,21 +21,35 @@ pub const IndexFormat = enum(u32) {
 
 pub const TextureFormat = enum(u32) {
     rgba8unorm,
+    depth24plus,
+};
+
+pub const TextureDimension = enum(u32) {
+    @"2d",
+    @"2d_array",
 };
 
 pub const RenderPipelineDescriptor = struct {
-    vertex: struct { module: ShaderModule, buffers: []const struct {
-        array_stride: u32,
-        attributes: []const struct {
-            format: VertexFormat,
-            offset: u32,
-            shader_location: u32,
-        },
-        step_mode: enum(u32) { vertex, instance } = .vertex,
-    } },
+    vertex: struct {
+        module: ShaderModule,
+        buffers: []const struct {
+            array_stride: u32,
+            attributes: []const struct {
+                format: VertexFormat,
+                offset: u32,
+                shader_location: u32,
+            },
+            step_mode: enum(u32) { vertex, instance } = .vertex,
+        } = &.{},
+    },
     fragment: struct {
         module: ShaderModule,
     },
+    depth_stencil: ?*const struct {
+        depth_compare: enum(u32) { less, greater },
+        depth_write_enabled: bool,
+        format: TextureFormat,
+    } = null,
 };
 
 pub const TextureUsage = packed struct(u32) {
@@ -55,6 +69,11 @@ pub const TextureDescriptor = struct {
     },
     format: TextureFormat,
     usage: TextureUsage,
+};
+
+pub const TextureViewDescriptor = struct {
+    dimension: TextureDimension = .@"2d",
+    array_layer_count: u32 = 1,
 };
 
 pub const SamplerDescriptor = struct {};
@@ -91,8 +110,16 @@ pub const ColorAttachment = struct {
     clear_value: Color,
 };
 
+pub const DepthAttachment = struct {
+    view: TextureView,
+    depth_load_op: LoadOp,
+    depth_store_op: StoreOp,
+    depth_clear_value: f32,
+};
+
 pub const RenderPassDescriptor = struct {
     color_attachments: []const ColorAttachment,
+    depth_stencil_attachment: ?*const DepthAttachment,
 };
 
 pub const BufferUsage = packed struct(u32) {
@@ -131,8 +158,20 @@ pub const Buffer = Object;
 pub const Texture = struct {
     object: Object,
 
-    pub fn createView(self: Texture) TextureView {
-        return wgpu_texture_create_view(self.object);
+    pub fn release(self: Texture) void {
+        self.object.release();
+    }
+
+    pub fn createView(self: Texture, descriptor: TextureViewDescriptor) TextureView {
+        return wgpu_texture_create_view(self.object, &descriptor);
+    }
+
+    pub fn getWidth(self: Texture) u32 {
+        return wgpu_texture_width(self.object);
+    }
+
+    pub fn getHeight(self: Texture) u32 {
+        return wgpu_texture_height(self.object);
     }
 };
 
@@ -227,8 +266,8 @@ pub fn createRenderPipeline(descriptor: RenderPipelineDescriptor) RenderPipeline
     return .{ .object = wgpu_device_create_render_pipeline(&descriptor) };
 }
 
-pub fn getCurrentTextureView() TextureView {
-    return wgpu_get_current_texture_view();
+pub fn getCurrentTexture() Texture {
+    return .{ .object = wgpu_canvas_context_get_current_texture() };
 }
 
 pub fn createCommandEncoder() CommandEncoder {
@@ -268,21 +307,23 @@ pub fn queueWriteTexture(texture: Texture, args: TextureWriteArgs) void {
 }
 
 extern fn wgpu_object_destroy(Object) void;
+extern fn wgpu_canvas_context_get_current_texture() Object;
 extern fn wgpu_device_create_shader_module(*const ShaderModuleDescriptor) ShaderModule;
 extern fn wgpu_device_create_buffer(*const BufferDescriptor) Buffer;
 extern fn wgpu_device_create_render_pipeline(*const RenderPipelineDescriptor) Object;
-extern fn wgpu_get_current_texture_view() TextureView;
 extern fn wgpu_device_create_command_encoder() Object;
 extern fn wgpu_device_create_texture(*const TextureDescriptor) Object;
 extern fn wgpu_device_create_sampler(*const SamplerDescriptor) Sampler;
 extern fn wgpu_device_create_bind_group(*const BindGroupDescriptor) BindGroup;
-extern fn wgpu_texture_create_view(texture: Object) TextureView;
+extern fn wgpu_texture_create_view(texture: Object, *const TextureViewDescriptor) TextureView;
+extern fn wgpu_texture_width(texture: Object) u32;
+extern fn wgpu_texture_height(texture: Object) u32;
 extern fn wgpu_pipeline_get_bind_group_layout(pipeline: Object, u32) BindGroupLayout;
 extern fn wgpu_command_encoder_begin_render_pass(command_encoder: Object, *const RenderPassDescriptor) Object;
 extern fn wgpu_encoder_set_pipeline(pass_encoder: Object, pipeline: Object) void;
 extern fn wgpu_render_commands_mixin_set_vertex_buffer(pass_encoder: Object, u32, Buffer, u32, i32) void;
 extern fn wgpu_render_commands_mixin_set_index_buffer(pass_encoder: Object, Buffer, IndexFormat, u32, i32) void;
-extern fn wgpu_render_commands_mixin_draw(pass_encoder: Object, u32, u32, u32, u32, u32) void;
+extern fn wgpu_render_commands_mixin_draw(pass_encoder: Object, u32, u32, u32, u32) void;
 extern fn wgpu_render_commands_mixin_draw_indexed(pass_encoder: Object, u32, u32, u32, u32, u32) void;
 extern fn wgpu_encoder_end(pass_encoder: Object) void;
 extern fn wgpu_encoder_finish(command_encoder: Object) CommandBuffer;
