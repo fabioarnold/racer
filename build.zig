@@ -30,12 +30,15 @@ pub fn build(b: *std.Build) !void {
 
         b.installArtifact(exe);
     } else {
+        const target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
+        const zgltf = b.dependency("zgltf", .{ .target = target, .optimize = optimize });
         const wasm = b.addExecutable(.{
             .name = "racer",
             .root_source_file = b.path("src/main_wasm.zig"),
-            .target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .freestanding }),
+            .target = target,
             .optimize = optimize,
         });
+        wasm.root_module.addImport("zgltf", zgltf.module("zgltf"));
         wasm.rdynamic = true;
         wasm.entry = .disabled;
         b.installArtifact(wasm);

@@ -19,6 +19,10 @@
             .url = "git+https://github.com/Not-Nik/raylib-zig?ref=devel#de8c2d458516fc971f0859c4473e3381767d2471",
             .hash = "122058d3ea6318efb819d0bffba630afd1a459fa3a99b4bfe4b680a937d5de04d2fc",
         },
+        .zgltf = .{
+            .url = "https://github.com/kooparse/zgltf/archive/c05471bfcd49d2a2bcbc4e1273e2cb4f972461d1.tar.gz",
+            .hash = "1220531a8e6b1e3f45fae01cda2621e1c714694dffd93c97f21b74bea277be479a11",
+        },
     },
     .paths = .{
         // This makes *all* files, recursively, included in this package. It is generally

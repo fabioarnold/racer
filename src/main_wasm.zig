@@ -1,4 +1,5 @@
 const std = @import("std");
+const zgltf = @import("zgltf");
 const wasm = @import("web/wasm.zig");
 const gpu = @import("web/gpu.zig");
 const la = @import("linear_algebra.zig");
@@ -109,6 +110,12 @@ pub export fn onInit() void {
 
     gpu.queueWriteBuffer(vertex_buffer, 0, std.mem.sliceAsBytes(&vertex_data));
     gpu.queueWriteBuffer(index_buffer, 0, std.mem.sliceAsBytes(&index_data));
+
+    const allocator = std.heap.wasm_allocator;
+    var gltf = zgltf.init(allocator);
+    gltf.parse(@alignCast(@embedFile("models/mazda_rx7.glb"))) catch unreachable;
+    const binary = gltf.glb_binary.?;
+    _ = binary;
 }
 
 pub export fn onDraw() void {
