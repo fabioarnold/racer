@@ -8,12 +8,13 @@ function resizeCanvas() {
 }
 
 const readCharStr = (ptr, len) => {
-    const array = memoryU8.slice(ptr, ptr + len);
+    const array = new Uint8Array(memory.buffer, ptr, len);
     const decoder = new TextDecoder();
     return decoder.decode(array);
 };
 
 const readSlicePtr = (slicePtr) => {
+    const memoryU32 = new Uint32Array(memory.buffer);
     const ptr = memoryU32[slicePtr / 4];
     const len = memoryU32[slicePtr / 4 + 1];
     return readCharStr(ptr, len);
@@ -64,6 +65,7 @@ const wgpu_device_create_shader_module = (descriptor) => {
 };
 
 const wgpu_device_create_buffer = (descriptor) => {
+    const memoryU32 = new Uint32Array(memory.buffer);
     return wgpuStore(device.createBuffer({
         size: memoryU32[descriptor / 4],
         usage: memoryU32[descriptor / 4 + 1],
@@ -71,6 +73,7 @@ const wgpu_device_create_buffer = (descriptor) => {
 }
 
 const wgpu_device_create_render_pipeline = (descriptor) => {
+    const memoryU32 = new Uint32Array(memory.buffer);
     const vertexModule = wgpu[memoryU32[descriptor / 4]];
     let vertexBufferPtr = memoryU32[descriptor / 4 + 1];
     let vertexBufferLen = memoryU32[descriptor / 4 + 2];
@@ -129,6 +132,7 @@ const wgpu_device_create_command_encoder = () => {
 }
 
 const wgpu_device_create_texture = (descriptor) => {
+    const memoryU32 = new Uint32Array(memory.buffer);
     return wgpuStore(device.createTexture({
         size: [memoryU32[descriptor / 4], memoryU32[descriptor / 4 + 1], memoryU32[descriptor / 4 + 2],],
         format: textureFormats[memoryU32[descriptor / 4 + 3]],
@@ -141,6 +145,8 @@ const wgpu_device_create_sampler = (descriptor) => {
 }
 
 const wgpu_command_encoder_begin_render_pass = (commandEncoder, descriptor) => {
+    const memoryU32 = new Uint32Array(memory.buffer);
+    const memoryF32 = new Float32Array(memory.buffer);
     let colorAttachmentsLen = memoryU32[descriptor / 4 + 1];
     let colorAttachments = [];
     let i = memoryU32[descriptor / 4] / 4;
@@ -170,6 +176,7 @@ const wgpu_command_encoder_begin_render_pass = (commandEncoder, descriptor) => {
 }
 
 const wgpu_device_create_bind_group = (descriptor) => {
+    const memoryU32 = new Uint32Array(memory.buffer);
     let entriesPtr = memoryU32[descriptor / 4 + 1];
     let entriesLen = memoryU32[descriptor / 4 + 2];
     let entries = [];
@@ -189,6 +196,7 @@ const wgpu_device_create_bind_group = (descriptor) => {
 }
 
 const wgpu_texture_create_view = (texture, descriptor) => {
+    const memoryU32 = new Uint32Array(memory.buffer);
     const dimension = textureDimensions[memoryU32[descriptor / 4]];
     const arrayLayerCount = memoryU32[descriptor / 4 + 1];
     return wgpuStore(wgpu[texture].createView({
@@ -246,7 +254,7 @@ const wgpu_queue_submit = (commandBuffer) => {
 }
 
 const wgpu_queue_write_buffer = (buffer, bufferOffset, dataPtr, dataLen) => {
-    device.queue.writeBuffer(wgpu[buffer], bufferOffset, memoryU8, dataPtr, dataLen);
+    device.queue.writeBuffer(wgpu[buffer], bufferOffset, memory.buffer, dataPtr, dataLen);
 }
 
 const wgpu_queue_write_texture = (texture, dataPtr, dataLen, bytesPerRow, rowsPerImage, writeWidth, writeHeight, writeDepth) => {
@@ -313,9 +321,6 @@ async function main() {
     const results = await WebAssembly.instantiate(bytes, { env });
     const instance = results.instance;
     window.memory = instance.exports.memory;
-    window.memoryU8 = new Uint8Array(memory.buffer);
-    window.memoryU32 = new Uint32Array(memory.buffer);
-    window.memoryF32 = new Float32Array(memory.buffer);
     instance.exports.onInit();
 
     const draw = () => {

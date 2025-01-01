@@ -18,8 +18,6 @@ const texture_data = @embedFile("textures/brickwall.data");
 const texture_width = 32;
 const texture_height = 32;
 
-var mvp: [16]f32 = undefined;
-
 var uniform_buffer: gpu.Buffer = undefined;
 var bind_group: gpu.BindGroup = undefined;
 var vertex_buffer: gpu.Buffer = undefined;
@@ -59,10 +57,15 @@ pub export fn onInit() void {
         .fragment = .{
             .module = module,
         },
+        .depth_stencil = &.{
+            .depth_compare = .greater,
+            .format = .depth24plus,
+            .depth_write_enabled = true,
+        },
     });
 
     uniform_buffer = gpu.createBuffer(.{
-        .size = @sizeOf(@TypeOf(mvp)),
+        .size = @sizeOf(la.mat4),
         .usage = .{ .uniform = true, .copy_dst = true },
     });
 
@@ -116,20 +119,12 @@ pub export fn onInit() void {
     gltf.parse(@alignCast(@embedFile("models/mazda_rx7.glb"))) catch unreachable;
     const binary = gltf.glb_binary.?;
     _ = binary;
+
+    log.info("buffers.len = {}", .{gltf.data.buffers.items.len});
+    log.info("buffer_views.len = {}", .{gltf.data.buffer_views.items.len});
 }
 
 pub export fn onDraw() void {
-    const angle: f32 = @floatCast(wasm.performance.now() / 1000.0);
-    const s = @sin(angle);
-    const c = @cos(angle);
-    mvp = .{
-        c,  s, 0, 0,
-        -s, c, 0, 0,
-        0,  0, 1, 0,
-        0,  0, 0, 1,
-    };
-    gpu.queueWriteBuffer(uniform_buffer, 0, std.mem.sliceAsBytes(&mvp));
-
     const back_buffer = gpu.getCurrentTexture();
     defer back_buffer.release();
 
@@ -148,7 +143,19 @@ pub export fn onDraw() void {
     const aspect_ratio = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
 
     const projection = la.perspective(60, aspect_ratio, 0.01);
-    _ = projection;
+
+    const angle: f32 = @floatCast(wasm.performance.now() / 1000.0);
+    const s = @sin(angle);
+    const c = @cos(angle);
+    const model_mat: la.mat4 = .{
+        .{ c, s, 0, 0 },
+        .{ -s, c, 0, 0 },
+        .{ 0, 0, 1, 0 },
+        .{ 0, 0, 0, 1 },
+    };
+    const view_mat = la.translation(0, 0, -1);
+    const mvp = la.mul(projection, la.mul(view_mat, model_mat));
+    gpu.queueWriteBuffer(uniform_buffer, 0, std.mem.sliceAsBytes(&mvp));
 
     const command_encoder = gpu.createCommandEncoder();
     defer command_encoder.release();
