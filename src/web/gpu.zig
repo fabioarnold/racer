@@ -14,6 +14,14 @@ pub const VertexFormat = enum(u32) {
     float32x4,
 };
 
+pub const Topology = enum(u32) {
+    point_list,
+    line_list,
+    line_strip,
+    triangle_list,
+    triangle_strip,
+};
+
 pub const IndexFormat = enum(u32) {
     uint16,
     uint32,
@@ -30,21 +38,40 @@ pub const TextureDimension = enum(u32) {
 };
 
 pub const RenderPipelineDescriptor = struct {
+    const VertexBuffer = struct {
+        /// A number representing the stride, in bytes, between the different structures
+        /// (e.g. vertices) inside the buffer.
+        array_stride: u32,
+        attributes: []const struct {
+            /// An enumerated value that specifies the format of the vertex.
+            format: VertexFormat,
+            /// A number specifying the offset, in bytes, from the beginning of the structure
+            /// to the data for the attribute.
+            offset: u32,
+            /// The numeric location associated with this attribute, which will correspond with
+            /// a @location attribute declared in the WGSL code of the associated ShaderModule 
+            /// referenced in the vertex object's module property.
+            shader_location: u32,
+        },
+        step_mode: enum(u32) { vertex, instance } = .vertex,
+    };
+
+    layout: ?*const PipelineLayout = null,
     vertex: struct {
+        /// An object containing the WGSL code that this programmable stage will execute.
         module: ShaderModule,
-        buffers: []const struct {
-            array_stride: u32,
-            attributes: []const struct {
-                format: VertexFormat,
-                offset: u32,
-                shader_location: u32,
-            },
-            step_mode: enum(u32) { vertex, instance } = .vertex,
-        } = &.{},
+        /// An array of objects, each representing the expected layout of a vertex buffer used
+        /// in the pipeline.
+        buffers: []const VertexBuffer = &.{},
     },
     fragment: struct {
         module: ShaderModule,
     },
+    primitive: ?*const struct {
+        cull_mode: enum(u32) { none, front, back } = .none,
+        front_face: enum(u32) { ccw, cw } = .ccw,
+        topology: Topology = .triangle_list,
+    } = null,
     depth_stencil: ?*const struct {
         depth_compare: enum(u32) { less, greater },
         depth_write_enabled: bool,
@@ -77,6 +104,45 @@ pub const TextureViewDescriptor = struct {
 };
 
 pub const SamplerDescriptor = struct {};
+
+pub const ShaderStageVisibility = packed struct(u32) {
+    vertex: bool = false,
+    fragment: bool = false,
+    compute: bool = false,
+    _: u29 = 0,
+};
+
+pub const BindGroupLayoutResource = enum(u32) {
+    buffer,
+    sampler,
+    texture,
+};
+
+pub const BindGroupLayoutBuffer = extern struct {
+    type: enum(u32) { uniform, storage, read_only_storage } = .uniform,
+    has_dynamic_offset: bool = false,
+    min_binding_size: u32 = 0,
+};
+
+pub const BindGroupLayoutSampler = struct {};
+
+pub const BindGroupLayoutTexture = struct {};
+
+pub const BindGroupLayoutDescriptor = struct {
+    entries: []const struct {
+        binding: u32,
+        visibility: ShaderStageVisibility,
+        resource: union(BindGroupLayoutResource) {
+            buffer: BindGroupLayoutBuffer,
+            sampler: BindGroupLayoutSampler,
+            texture: BindGroupLayoutTexture,
+        },
+    },
+};
+
+pub const PipelineLayoutDescriptor = struct {
+    bind_group_layouts: []const BindGroupLayout,
+};
 
 pub const BindGroupDescriptor = struct {
     layout: BindGroupLayout,
@@ -151,6 +217,7 @@ pub const ShaderModule = Object;
 pub const Sampler = Object;
 pub const BindGroup = Object;
 pub const BindGroupLayout = Object;
+pub const PipelineLayout = Object;
 pub const TextureView = Object;
 pub const CommandBuffer = Object;
 pub const Buffer = Object;
@@ -262,6 +329,7 @@ pub fn createBuffer(descriptor: BufferDescriptor) Buffer {
     return wgpu_device_create_buffer(&descriptor);
 }
 
+/// Creates a RenderPipeline that can control the vertex and fragment shader stages and be used in a RenderPassEncoder.
 pub fn createRenderPipeline(descriptor: RenderPipelineDescriptor) RenderPipeline {
     return .{ .object = wgpu_device_create_render_pipeline(&descriptor) };
 }
@@ -280,6 +348,18 @@ pub fn createTexture(descriptor: TextureDescriptor) Texture {
 
 pub fn createSampler(descriptor: SamplerDescriptor) Sampler {
     return wgpu_device_create_sampler(&descriptor);
+}
+
+/// Creates a BindGroupLayout that defines the structure and purpose of related GPU resources such
+/// as buffers that will be used in a pipeline, and is used as a template when creating BindGroups.
+pub fn createBindGroupLayout(descriptor: BindGroupLayoutDescriptor) BindGroupLayout {
+    return wgpu_device_create_bind_group_layout(&descriptor);
+}
+
+/// creates a PipelineLayout that defines the BindGroupLayouts used by a pipeline. BindGroups used
+/// with the pipeline during command encoding must have compatible BindGroupLayouts.
+pub fn createPipelineLayout(descriptor: PipelineLayoutDescriptor) PipelineLayout {
+    return wgpu_device_create_pipeline_layout(&descriptor);
 }
 
 pub fn createBindGroup(descriptor: BindGroupDescriptor) BindGroup {
@@ -314,6 +394,8 @@ extern fn wgpu_device_create_render_pipeline(*const RenderPipelineDescriptor) Ob
 extern fn wgpu_device_create_command_encoder() Object;
 extern fn wgpu_device_create_texture(*const TextureDescriptor) Object;
 extern fn wgpu_device_create_sampler(*const SamplerDescriptor) Sampler;
+extern fn wgpu_device_create_bind_group_layout(*const BindGroupLayoutDescriptor) BindGroupLayout;
+extern fn wgpu_device_create_pipeline_layout(*const PipelineLayoutDescriptor) PipelineLayout;
 extern fn wgpu_device_create_bind_group(*const BindGroupDescriptor) BindGroup;
 extern fn wgpu_texture_create_view(texture: Object, *const TextureViewDescriptor) TextureView;
 extern fn wgpu_texture_width(texture: Object) u32;

@@ -74,11 +74,14 @@ const wgpu_device_create_buffer = (descriptor) => {
 
 const wgpu_device_create_render_pipeline = (descriptor) => {
     const memoryU32 = new Uint32Array(memory.buffer);
-    const vertexModule = wgpu[memoryU32[descriptor / 4]];
-    let vertexBufferPtr = memoryU32[descriptor / 4 + 1];
-    let vertexBufferLen = memoryU32[descriptor / 4 + 2];
-    const fragmentModule = wgpu[memoryU32[descriptor / 4 + 3]];
-    const depthStencilPtr = memoryU32[descriptor / 4 + 4];
+    const layoutPtr = memoryU32[descriptor / 4]
+    const layout = layoutPtr ? wgpu[memoryU32[layoutPtr / 4]] : "auto";
+    const vertexModule = wgpu[memoryU32[descriptor / 4 + 1]];
+    let vertexBufferPtr = memoryU32[descriptor / 4 + 2];
+    let vertexBufferLen = memoryU32[descriptor / 4 + 3];
+    const fragmentModule = wgpu[memoryU32[descriptor / 4 + 4]];
+    const primitivePtr = memoryU32[descriptor / 4 + 5];
+    const depthStencilPtr = memoryU32[descriptor / 4 + 6];
     let vertexBuffers = [];
     while (vertexBufferLen--) {
         let attributes = [];
@@ -99,6 +102,16 @@ const wgpu_device_create_render_pipeline = (descriptor) => {
         });
         vertexBufferPtr += 16;
     }
+    let primitive = undefined;
+    if (primitivePtr > 0) {
+        primitive = {
+            cullMode: ["none", "front", "back"][memoryU32[primitivePtr / 4]],
+            frontFace: ["ccw", "cw"][memoryU32[primitivePtr / 4 + 1]],
+            topology: [
+                "point-list", "line-list", "line-strip", "triangle-list", "triangle-strip",
+            ][memoryU32[primitivePtr / 4 + 2]],
+        };
+    }
     let depthStencil = undefined;
     if (depthStencilPtr > 0) {
         depthStencil = {
@@ -109,7 +122,7 @@ const wgpu_device_create_render_pipeline = (descriptor) => {
     }
     const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
     const pipeline = device.createRenderPipeline({
-        layout: 'auto',
+        layout,
         vertex: {
             module: vertexModule,
             buffers: vertexBuffers,
@@ -118,6 +131,7 @@ const wgpu_device_create_render_pipeline = (descriptor) => {
             module: fragmentModule,
             targets: [{ format: presentationFormat }],
         },
+        primitive,
         depthStencil,
     });
     return wgpuStore(pipeline);
@@ -173,6 +187,46 @@ const wgpu_command_encoder_begin_render_pass = (commandEncoder, descriptor) => {
         colorAttachments,
         depthStencilAttachment,
     }));
+}
+
+const wgpu_device_create_bind_group_layout = (descriptor) => {
+    const memoryU32 = new Uint32Array(memory.buffer);
+    let entriesPtr = memoryU32[descriptor / 4];
+    let entriesLen = memoryU32[descriptor / 4 + 1];
+    let entries = [];
+    while (entriesLen--) {
+        let entry = {
+            binding: memoryU32[entriesPtr / 4],
+            visibility: memoryU32[entriesPtr / 4 + 1],
+        };
+        let resourceType = memoryU32[entriesPtr / 4 + 2];
+        if (resourceType === 0) {
+            entry.buffer = {
+                type: ["uniform", "storage", "read-only-storage"][memoryU32[entriesPtr / 4 + 3]],
+                hasDynamicOffset: !!memoryU32[entriesPtr / 4 + 4],
+                minBindingSize: memoryU32[entriesPtr / 4 + 5],
+            };
+        } else if (resourceType === 1) {
+            entry.sampler = {};
+        } else if (resourceType === 2) {
+            entry.texture = {};
+        }
+        entries.push(entry);
+        entriesPtr += 24;
+    }
+    return wgpuStore(device.createBindGroupLayout({ entries }));
+}
+
+const wgpu_device_create_pipeline_layout = (descriptor) => {
+    const memoryU32 = new Uint32Array(memory.buffer);
+    let bindGroupLayoutsPtr = memoryU32[descriptor / 4];
+    let bindGroupLayoutsLen = memoryU32[descriptor / 4 + 1];
+    let bindGroupLayouts = [];
+    while (bindGroupLayoutsLen--) {
+        bindGroupLayouts.push(wgpu[memoryU32[bindGroupLayoutsPtr / 4]]);
+        bindGroupLayoutsPtr += 4;
+    }
+    return wgpuStore(device.createPipelineLayout({ bindGroupLayouts }));
 }
 
 const wgpu_device_create_bind_group = (descriptor) => {
@@ -279,6 +333,8 @@ const env = {
     wgpu_device_create_command_encoder,
     wgpu_device_create_texture,
     wgpu_device_create_sampler,
+    wgpu_device_create_bind_group_layout,
+    wgpu_device_create_pipeline_layout,
     wgpu_device_create_bind_group,
     wgpu_texture_create_view,
     wgpu_texture_width,
