@@ -1,5 +1,6 @@
 const std = @import("std");
 const zgltf = @import("zgltf");
+const models = @import("models");
 const wasm = @import("web/wasm.zig");
 const gpu = @import("web/gpu.zig");
 const la = @import("linear_algebra.zig");
@@ -13,14 +14,14 @@ pub const std_options = std.Options{
 
 var depth_texture: gpu.Texture = undefined;
 
-const texture_data = @embedFile("textures/brickwall.data");
-const texture_width = 32;
-const texture_height = 32;
+const texture_data = @embedFile("textures/AICP_Tex_1.data");
+const texture_width = 512;
+const texture_height = 512;
 
 var shader_module: gpu.ShaderModule = undefined;
-var uniform_buffer: gpu.Buffer = undefined;
-var bind_group_layout: gpu.BindGroupLayout = undefined;
-var bind_group: gpu.BindGroup = undefined;
+var global_uniform_buffer: gpu.Buffer = undefined;
+var global_bind_group: gpu.BindGroup = undefined;
+var local_bind_group_layout: gpu.BindGroupLayout = undefined;
 var pipeline_layout: gpu.PipelineLayout = undefined;
 
 pub export fn onInit() void {
@@ -33,7 +34,7 @@ pub export fn onInit() void {
 
     shader_module = gpu.createShaderModule(.{ .code = @embedFile("shaders/default.wgsl") });
 
-    uniform_buffer = gpu.createBuffer(.{
+    global_uniform_buffer = gpu.createBuffer(.{
         .size = @sizeOf(la.mat4),
         .usage = .{ .uniform = true, .copy_dst = true },
     });
@@ -51,7 +52,7 @@ pub export fn onInit() void {
     });
     const sampler = gpu.createSampler(.{});
 
-    bind_group_layout = gpu.createBindGroupLayout(.{
+    const global_bind_group_layout = gpu.createBindGroupLayout(.{
         .entries = &.{
             .{
                 .binding = 0,
@@ -70,20 +71,32 @@ pub export fn onInit() void {
             },
         },
     });
-    pipeline_layout = gpu.createPipelineLayout(.{
-        .bind_group_layouts = &.{bind_group_layout},
-    });
-    bind_group = gpu.createBindGroup(.{
-        .layout = bind_group_layout,
+    local_bind_group_layout = gpu.createBindGroupLayout(.{
         .entries = &.{
-            .{ .binding = 0, .resource = uniform_buffer },
+            .{
+                .binding = 0,
+                .visibility = .{ .vertex = true },
+                .resource = .{ .buffer = .{} },
+            },
+        },
+    });
+    pipeline_layout = gpu.createPipelineLayout(.{
+        .bind_group_layouts = &.{
+            global_bind_group_layout,
+            local_bind_group_layout,
+        },
+    });
+    global_bind_group = gpu.createBindGroup(.{
+        .layout = global_bind_group_layout,
+        .entries = &.{
+            .{ .binding = 0, .resource = global_uniform_buffer },
             .{ .binding = 1, .resource = sampler },
             .{ .binding = 2, .resource = texture.createView(.{}) },
         },
     });
 
     const allocator = std.heap.wasm_allocator;
-    model.load(allocator, @alignCast(@embedFile("models/mazda_rx7.glb"))) catch unreachable;
+    model.load(allocator, @alignCast(models.acrux)) catch unreachable;
 }
 
 var model: Model = undefined;
@@ -98,6 +111,8 @@ const Model = struct {
 
         const Primitive = struct {
             pipeline: gpu.RenderPipeline,
+            uniform_buffer: gpu.Buffer,
+            bind_group: gpu.BindGroup,
             position_buffer: gpu.Buffer,
             normal_buffer: gpu.Buffer,
             texcoord_buffer: gpu.Buffer,
@@ -116,7 +131,8 @@ const Model = struct {
         // upload buffers
         self.buffers = try allocator.alloc(gpu.Buffer, data.buffer_views.items.len);
         for (data.buffer_views.items, 0..) |*buffer_view, i| {
-            const is_index = buffer_view.target == .element_array_buffer;
+            const target = buffer_view.target orelse continue;
+            const is_index = target == .element_array_buffer;
             self.buffers[i] = gpu.createBuffer(.{
                 .size = buffer_view.byte_length,
                 .usage = .{ .vertex = !is_index, .index = is_index, .copy_dst = true },
@@ -220,6 +236,17 @@ const Model = struct {
                         .depth_write_enabled = true,
                     },
                 });
+
+                primitive.uniform_buffer = gpu.createBuffer(.{
+                    .size = @sizeOf(la.mat4),
+                    .usage = .{ .uniform = true, .copy_dst = true },
+                });
+                primitive.bind_group = gpu.createBindGroup(.{
+                    .layout = local_bind_group_layout,
+                    .entries = &.{
+                        .{ .binding = 0, .resource = primitive.uniform_buffer },
+                    },
+                });
             }
         }
     }
@@ -227,10 +254,13 @@ const Model = struct {
     pub fn draw(self: *const Model, render_pass: gpu.RenderPass) void {
         const data = &self.gltf.data;
         for (data.nodes.items) |*node| {
+            const transform = zgltf.getLocalTransform(node.*);
             const mesh = &self.meshes[node.mesh orelse continue];
             for (mesh.primitives) |*primitive| {
+                gpu.queueWriteBuffer(primitive.uniform_buffer, 0, std.mem.sliceAsBytes(&transform));
                 render_pass.setPipeline(primitive.pipeline);
-                render_pass.setBindGroup(0, bind_group);
+                render_pass.setBindGroup(0, global_bind_group);
+                render_pass.setBindGroup(1, primitive.bind_group);
                 render_pass.setVertexBuffer(0, primitive.position_buffer, .{});
                 render_pass.setVertexBuffer(1, primitive.normal_buffer, .{});
                 render_pass.setVertexBuffer(2, primitive.texcoord_buffer, .{});
@@ -263,7 +293,7 @@ pub export fn onDraw() void {
 
     const projection = la.perspective(60, aspect_ratio, 0.01);
 
-    const angle: f32 = @floatCast(wasm.performance.now() / 1000.0);
+    const angle: f32 = -1;
     const s = @sin(angle);
     const c = @cos(angle);
     const model_mat: la.mat4 = .{
@@ -272,9 +302,9 @@ pub export fn onDraw() void {
         .{ 0, 0, 1, 0 },
         .{ 0, 0, 0, 1 },
     };
-    const view_mat = la.mul(la.translation(0, 0, -6), la.rotation(-60.0, .{ 1, 0, 0 }));
+    const view_mat = la.mul(la.translation(0, 0, -5), la.rotation(-60.0, .{ 1, 0, 0 }));
     const mvp = la.mul(projection, la.mul(view_mat, model_mat));
-    gpu.queueWriteBuffer(uniform_buffer, 0, std.mem.sliceAsBytes(&mvp));
+    gpu.queueWriteBuffer(global_uniform_buffer, 0, std.mem.sliceAsBytes(&mvp));
 
     const command_encoder = gpu.createCommandEncoder();
     defer command_encoder.release();
