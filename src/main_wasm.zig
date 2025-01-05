@@ -14,10 +14,6 @@ pub const std_options = std.Options{
 
 var depth_texture: gpu.Texture = undefined;
 
-const texture_data = @embedFile("textures/AICP_Tex_1.data");
-const texture_width = 512;
-const texture_height = 512;
-
 var shader_module: gpu.ShaderModule = undefined;
 var global_uniform_buffer: gpu.Buffer = undefined;
 var global_bind_group: gpu.BindGroup = undefined;
@@ -39,17 +35,6 @@ pub export fn onInit() void {
         .usage = .{ .uniform = true, .copy_dst = true },
     });
 
-    const texture = gpu.createTexture(.{
-        .size = .{ .width = texture_width, .height = texture_height },
-        .format = .rgba8unorm,
-        .usage = .{ .texture_binding = true, .copy_dst = true },
-    });
-    gpu.queueWriteTexture(texture, .{
-        .data = texture_data,
-        .bytes_per_row = 4 * texture_width,
-        .width = texture_width,
-        .height = texture_height,
-    });
     const sampler = gpu.createSampler(.{});
 
     const global_bind_group_layout = gpu.createBindGroupLayout(.{
@@ -64,11 +49,6 @@ pub export fn onInit() void {
                 .visibility = .{ .fragment = true },
                 .resource = .{ .sampler = .{} },
             },
-            .{
-                .binding = 2,
-                .visibility = .{ .fragment = true },
-                .resource = .{ .texture = .{} },
-            },
         },
     });
     local_bind_group_layout = gpu.createBindGroupLayout(.{
@@ -77,6 +57,11 @@ pub export fn onInit() void {
                 .binding = 0,
                 .visibility = .{ .vertex = true },
                 .resource = .{ .buffer = .{} },
+            },
+            .{
+                .binding = 1,
+                .visibility = .{ .fragment = true },
+                .resource = .{ .texture = .{} },
             },
         },
     });
@@ -91,7 +76,6 @@ pub export fn onInit() void {
         .entries = &.{
             .{ .binding = 0, .resource = global_uniform_buffer },
             .{ .binding = 1, .resource = sampler },
-            .{ .binding = 2, .resource = texture.createView(.{}) },
         },
     });
 
@@ -103,6 +87,7 @@ var model: Model = undefined;
 
 const Model = struct {
     gltf: zgltf,
+    textures: []gpu.Texture,
     buffers: []gpu.Buffer,
     meshes: []Mesh,
 
@@ -111,6 +96,7 @@ const Model = struct {
 
         const Primitive = struct {
             pipeline: gpu.RenderPipeline,
+            texture_index: u32,
             uniform_buffer: gpu.Buffer,
             bind_group: gpu.BindGroup,
             position_buffer: gpu.Buffer,
@@ -128,10 +114,21 @@ const Model = struct {
         const binary = self.gltf.glb_binary.?;
         const data = &self.gltf.data;
 
+        // load textures
+        self.textures = try allocator.alloc(gpu.Texture, data.images.items.len);
+        for (data.images.items, 0..) |image, i| {
+            self.textures[i] = gpu.createTexture(.{
+                .format = .rgba8unorm,
+                .size = .{ .width = 512, .height = 512 }, // TODO: glTF does not have any info about tex dims
+                .usage = .{ .texture_binding = true, .copy_dst = true, .render_attachment = true },
+            });
+            self.textures[i].fromImage(image.data.?, image.mime_type.?);
+        }
+
         // upload buffers
         self.buffers = try allocator.alloc(gpu.Buffer, data.buffer_views.items.len);
         for (data.buffer_views.items, 0..) |*buffer_view, i| {
-            const target = buffer_view.target orelse continue;
+            const target = buffer_view.target orelse continue; // ignore textures
             const is_index = target == .element_array_buffer;
             self.buffers[i] = gpu.createBuffer(.{
                 .size = buffer_view.byte_length,
@@ -146,6 +143,9 @@ const Model = struct {
         for (data.meshes.items, self.meshes) |*gltf_mesh, *mesh| {
             mesh.primitives = try allocator.alloc(Mesh.Primitive, gltf_mesh.primitives.items.len);
             for (gltf_mesh.primitives.items, mesh.primitives) |*gltf_primitive, *primitive| {
+                const gltf_material = data.materials.items[gltf_primitive.material.?];
+                primitive.texture_index = gltf_material.metallic_roughness.base_color_texture.?.index;
+
                 for (gltf_primitive.attributes.items) |attribute| {
                     switch (attribute) {
                         .position => |accessor_index| {
@@ -171,6 +171,7 @@ const Model = struct {
                         else => return error.InvalidAttribute,
                     }
                 }
+
                 const index_accessor = data.accessors.items[gltf_primitive.indices.?];
                 primitive.index_buffer = self.buffers[index_accessor.buffer_view.?];
                 primitive.index_format = switch (index_accessor.component_type) {
@@ -179,6 +180,7 @@ const Model = struct {
                     else => return error.InvalidIndexFormat,
                 };
                 primitive.index_count = @intCast(index_accessor.count);
+
                 const topology: gpu.Topology = switch (gltf_primitive.mode) {
                     .points => .point_list,
                     .lines => .line_list,
@@ -245,6 +247,7 @@ const Model = struct {
                     .layout = local_bind_group_layout,
                     .entries = &.{
                         .{ .binding = 0, .resource = primitive.uniform_buffer },
+                        .{ .binding = 1, .resource = self.textures[primitive.texture_index].createView(.{}) },
                     },
                 });
             }

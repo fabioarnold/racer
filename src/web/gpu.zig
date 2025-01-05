@@ -49,7 +49,7 @@ pub const RenderPipelineDescriptor = struct {
             /// to the data for the attribute.
             offset: u32,
             /// The numeric location associated with this attribute, which will correspond with
-            /// a @location attribute declared in the WGSL code of the associated ShaderModule 
+            /// a @location attribute declared in the WGSL code of the associated ShaderModule
             /// referenced in the vertex object's module property.
             shader_location: u32,
         },
@@ -225,6 +225,14 @@ pub const Buffer = Object;
 pub const Texture = struct {
     object: Object,
 
+    pub fn fromImage(self: Texture, data: []const u8, mime_type: []const u8) void {
+        wgpu_texture_from_image_async(self.object, data.ptr, data.len, mime_type.ptr, mime_type.len);
+    }
+
+    pub fn isComplete(self: Texture) bool {
+        return wgpu_texture_from_image_complete(self.object);
+    }
+
     pub fn release(self: Texture) void {
         self.object.release();
     }
@@ -397,6 +405,8 @@ extern fn wgpu_device_create_sampler(*const SamplerDescriptor) Sampler;
 extern fn wgpu_device_create_bind_group_layout(*const BindGroupLayoutDescriptor) BindGroupLayout;
 extern fn wgpu_device_create_pipeline_layout(*const PipelineLayoutDescriptor) PipelineLayout;
 extern fn wgpu_device_create_bind_group(*const BindGroupDescriptor) BindGroup;
+extern fn wgpu_texture_from_image_async(texture: Object, data_ptr: [*]const u8, data_len: usize, mime_type_ptr: [*]const u8, mime_type_len: usize) void;
+extern fn wgpu_texture_from_image_complete(texture: Object) bool;
 extern fn wgpu_texture_create_view(texture: Object, *const TextureViewDescriptor) TextureView;
 extern fn wgpu_texture_width(texture: Object) u32;
 extern fn wgpu_texture_height(texture: Object) u32;

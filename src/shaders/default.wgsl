@@ -12,8 +12,8 @@ struct VertexOut {
 
 @group(0) @binding(0) var<uniform> view_projection: mat4x4f;
 @group(0) @binding(1) var ourSampler: sampler;
-@group(0) @binding(2) var ourTexture: texture_2d<f32>;
 @group(1) @binding(0) var<uniform> model: mat4x4f;
+@group(1) @binding(1) var ourTexture: texture_2d<f32>;
 
 @vertex fn vs(in: VertexIn) -> VertexOut {
     var out: VertexOut;

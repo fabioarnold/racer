@@ -249,6 +249,24 @@ const wgpu_device_create_bind_group = (descriptor) => {
     }));
 }
 
+const wgpu_texture_from_image_async = (textureId, dataPtr, dataLen, typePtr, typeLen) => {
+    const data = new Uint8Array(memory.buffer, dataPtr, dataLen);
+    const type = readCharStr(typePtr, typeLen);
+    const blob = new Blob([data], { type });
+    const wid = wgpuStore({ placeholder: true });
+    createImageBitmap(blob).then(source => {
+        device.queue.copyExternalImageToTexture(
+            { source, flipY: false },
+            { texture: wgpu[textureId] },
+            { width: source.width, height: source.height },
+        );
+    });
+};
+
+const wgpu_texture_from_image_complete = (texture) => {
+    return !!wgpu[texture].placeholder;
+}
+
 const wgpu_texture_create_view = (texture, descriptor) => {
     const memoryU32 = new Uint32Array(memory.buffer);
     const dimension = textureDimensions[memoryU32[descriptor / 4]];
@@ -336,6 +354,8 @@ const env = {
     wgpu_device_create_bind_group_layout,
     wgpu_device_create_pipeline_layout,
     wgpu_device_create_bind_group,
+    wgpu_texture_from_image_async,
+    wgpu_texture_from_image_complete,
     wgpu_texture_create_view,
     wgpu_texture_width,
     wgpu_texture_height,
